@@ -13,6 +13,44 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - safesnap-network
+
+  app:
+    build: .
+    container_name: safesnap-app
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      # Database connection
+      - DB_URL=jdbc:postgresql://db:5432/safesnapdb
+      - DB_USERNAME=safesnap
+      - DB_PASSWORD=safesnap123
+      - SPRING_PROFILES_ACTIVE=docker
+      
+      # AWS credentials (from host environment)
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_S3_BUCKET_NAME=${AWS_S3_BUCKET_NAME}
+      
+      # Google Cloud credentials
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
+      
+      # JWT secret
+      - JWT_SECRET=${JWT_SECRET}
+    volumes:
+      # Mount Google Cloud credentials file if using service account JSON
+      - ${GOOGLE_APPLICATION_CREDENTIALS:-/tmp/dummy}:${GOOGLE_APPLICATION_CREDENTIALS:-/tmp/dummy}:ro
+    depends_on:
+      - db
+    networks:
+      - safesnap-network
 
 volumes:
   postgres_data:
+
+networks:
+  safesnap-network:
+    driver: bridge
