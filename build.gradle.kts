@@ -4,6 +4,7 @@ plugins {
 	id("org.springframework.boot") version "3.5.3"
 	id("io.spring.dependency-management") version "1.1.7"
 	kotlin("plugin.jpa") version "1.9.25"
+	jacoco
 }
 
 group = "com.safesnap"
@@ -33,11 +34,36 @@ dependencies {
 	implementation("io.jsonwebtoken:jjwt-api:0.11.5")
 	runtimeOnly("io.jsonwebtoken:jjwt-impl:0.11.5")
 	runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.11.5")
+
+	// AWS SDK
+	implementation("software.amazon.awssdk:s3:2.21.29")
+	implementation("software.amazon.awssdk:auth:2.21.29")
+
+	// Google Cloud Vision API with conflict resolution
+	implementation("com.google.cloud:google-cloud-vision:3.20.0") {
+		exclude(group = "com.google.guava", module = "listenablefuture")
+	}
+	implementation("com.google.guava:guava:32.1.3-jre")
+
+	// Spring Boot Test
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
 	testImplementation("org.springframework.security:spring-security-test")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+	
+	// JUnit Vintage for Cucumber JUnit runner
+	testRuntimeOnly("org.junit.vintage:junit-vintage-engine")
+
+	// Cucumber BDD Testing
+	testImplementation("io.cucumber:cucumber-java:7.14.0")
+	testImplementation("io.cucumber:cucumber-junit:7.14.0")
+	testImplementation("io.cucumber:cucumber-spring:7.14.0")
+
+	// Mockito Kotlin (for unit tests)
+	testImplementation("org.mockito.kotlin:mockito-kotlin:5.1.0")
+	testImplementation("org.mockito:mockito-core:5.6.0")
 }
+
 
 kotlin {
 	compilerOptions {
@@ -53,8 +79,50 @@ allOpen {
 
 tasks.withType<Test> {
 	useJUnitPlatform()
+	// Also support traditional JUnit for Cucumber
+	include("**/*Test.class", "**/*Tests.class")
 }
+
 tasks.test {
 	useJUnitPlatform()
-	systemProperty("spring.profiles.active", "test")  // <-- forces "test" profile
+	systemProperty("spring.profiles.active", "test")
+	
+	// Enable both JUnit Platform and traditional JUnit
+	testLogging {
+		events("passed", "skipped", "failed")
+	}
+}
+
+// JaCoCo configuration
+jacoco {
+	toolVersion = "0.8.11"
+}
+
+tasks.jacocoTestReport {
+	dependsOn(tasks.test)
+	reports {
+		xml.required.set(true)
+		html.required.set(true)
+		csv.required.set(false)
+	}
+	finalizedBy(tasks.jacocoTestCoverageVerification)
+}
+
+tasks.jacocoTestCoverageVerification {
+	violationRules {
+		rule {
+			limit {
+				minimum = "0.80".toBigDecimal() // 80% minimum coverage
+			}
+		}
+	}
+}
+
+configurations {
+	jacocoAgent {
+		resolutionStrategy.force("org.jacoco:org.jacoco.agent:0.8.12")
+	}
+	jacocoAnt {
+		resolutionStrategy.force("org.jacoco:org.jacoco.ant:0.8.12")
+	}
 }
