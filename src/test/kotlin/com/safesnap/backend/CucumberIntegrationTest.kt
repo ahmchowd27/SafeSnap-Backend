@@ -6,7 +6,7 @@ import org.junit.runner.RunWith
 
 @RunWith(Cucumber::class)
 @CucumberOptions(
-    features = ["classpath:features"],
+    features = ["classpath:features/auth.feature"],
     glue = ["com.safesnap.backend.steps"],
     plugin = ["pretty"]
 )

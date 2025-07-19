@@ -18,7 +18,7 @@ COPY src ./src
 RUN gradle bootJar --no-daemon
 
 # Runtime stage
-FROM openjdk:21-jre-slim
+FROM eclipse-temurin:21-jre-jammy
 
 # Create non-root user for security
 RUN groupadd -r safesnap && useradd -r -g safesnap safesnap
