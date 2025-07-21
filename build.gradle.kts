@@ -22,6 +22,14 @@ repositories {
 
 dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
+	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+	implementation("org.springframework.boot:spring-boot-starter-security")
+	implementation("org.springframework.boot:spring-boot-starter-validation")
+	implementation("org.springframework.boot:spring-boot-starter-web")
+	
+	// Kotlin support
+	implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+	implementation("org.jetbrains.kotlin:kotlin-reflect")
 	
 	// Monitoring with Micrometer
 	implementation("io.micrometer:micrometer-registry-prometheus")
@@ -34,15 +42,8 @@ dependencies {
 	implementation("com.github.vladimir-bukhtoyarov:bucket4j-core:7.6.0")
 	implementation("com.github.vladimir-bukhtoyarov:bucket4j-caffeine:7.6.0")
 	implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
-	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
-	implementation("org.springframework.boot:spring-boot-starter-security")
-	implementation("org.springframework.boot:spring-boot-starter-validation")
-	implementation("org.springframework.boot:spring-boot-starter-web")
-	implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
-	implementation("org.jetbrains.kotlin:kotlin-reflect")
-	developmentOnly("org.springframework.boot:spring-boot-devtools")
-	runtimeOnly("org.postgresql:postgresql")
-	testImplementation("com.h2database:h2")
+	
+	// JWT
 	implementation("io.jsonwebtoken:jjwt-api:0.11.5")
 	runtimeOnly("io.jsonwebtoken:jjwt-impl:0.11.5")
 	runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.11.5")
@@ -57,13 +58,18 @@ dependencies {
 	}
 	implementation("com.google.guava:guava:32.1.3-jre")
 
-	// Spring Boot Test
+	// Database
+	runtimeOnly("org.postgresql:postgresql")
+	testImplementation("com.h2database:h2")
+	
+	// Development
+	developmentOnly("org.springframework.boot:spring-boot-devtools")
+	
+	// Testing
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
 	testImplementation("org.springframework.security:spring-security-test")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-	
-	// JUnit Vintage for Cucumber JUnit runner
 	testRuntimeOnly("org.junit.vintage:junit-vintage-engine")
 
 	// Cucumber BDD Testing
@@ -87,6 +93,11 @@ allOpen {
 	annotation("jakarta.persistence.Entity")
 	annotation("jakarta.persistence.MappedSuperclass")
 	annotation("jakarta.persistence.Embeddable")
+}
+
+// Specify main class for Spring Boot
+springBoot {
+	mainClass.set("com.safesnap.backend.SafeSnapBackendApplicationKt")
 }
 
 tasks.withType<Test> {

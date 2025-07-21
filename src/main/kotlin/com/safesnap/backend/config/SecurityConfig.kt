@@ -59,6 +59,9 @@ class SecurityConfig(
         http.csrf { it.disable() }
             .authorizeHttpRequests {
                 it.requestMatchers("/api/auth/**").permitAll()
+                    .requestMatchers("/v3/api-docs/**").permitAll()
+                    .requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()
+                    .requestMatchers("/actuator/**").permitAll() // Health checks
                     .anyRequest().authenticated()
             }
             .sessionManagement {
