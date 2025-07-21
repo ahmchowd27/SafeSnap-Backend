@@ -29,13 +29,13 @@ data class User(
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    val role: Role = Role.USER,
+    val role: Role = Role.WORKER,
 
     @field:NotBlank
     @Column(nullable = false, length = 50)
     val fullName: String
 )
 enum class Role {
-    USER,
+    WORKER,
     MANAGER
 }
