@@ -116,16 +116,12 @@ class ImageAnalysisController(
     }
 }
 
-/**
- * Request to test image analysis
- */
+
 data class TestAnalysisRequest(
     val s3Url: String
 )
 
-/**
- * Request for manual image processing
- */
+
 data class ManualProcessRequest(
     val incidentId: Long
 )
