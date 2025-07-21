@@ -8,6 +8,6 @@ import org.junit.runner.RunWith
 @CucumberOptions(
     features = ["classpath:features/auth.feature"],
     glue = ["com.safesnap.backend.steps"],
-    plugin = ["pretty"]
+    plugin = ["pretty", "html:target/cucumber-reports"]
 )
 class CucumberIntegrationTest

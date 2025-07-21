@@ -4,6 +4,7 @@ import com.safesnap.backend.service.S3Service
 import com.safesnap.backend.service.GoogleVisionService
 import com.safesnap.backend.service.FileType
 import org.springframework.http.ResponseEntity
+import org.springframework.security.core.userdetails.User
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -23,11 +24,18 @@ class TestController(
     @GetMapping("/s3-health")
     fun testS3Health(): ResponseEntity<Map<String, Any>> {
         return try {
+            // Create a mock UserDetails for testing
+            val mockUserDetails = User.builder()
+                .username("test@safesnap.com")
+                .password("password")
+                .authorities("ROLE_USER")
+                .build()
+            
             // Test S3 connection by trying to generate a pre-signed URL
             val testUrl = s3Service.generatePresignedUploadUrl(
                 fileType = FileType.IMAGE,
                 fileExtension = "jpg",
-                userId = 999L
+                userDetails = mockUserDetails
             )
             
             ResponseEntity.ok(mapOf(
@@ -76,9 +84,16 @@ class TestController(
     fun testFullSystem(): ResponseEntity<Map<String, Any>> {
         val results = mutableMapOf<String, Any>()
         
+        // Create a mock UserDetails for testing
+        val mockUserDetails = User.builder()
+            .username("test@safesnap.com")
+            .password("password")
+            .authorities("ROLE_USER")
+            .build()
+        
         // Test S3
         try {
-            s3Service.generatePresignedUploadUrl(FileType.IMAGE, "jpg", 999L)
+            s3Service.generatePresignedUploadUrl(FileType.IMAGE, "jpg", mockUserDetails)
             results["s3"] = "✅ Working"
         } catch (e: Exception) {
             results["s3"] = "❌ Failed: ${e.message}"

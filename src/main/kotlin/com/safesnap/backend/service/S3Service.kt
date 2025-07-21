@@ -1,7 +1,10 @@
 package com.safesnap.backend.service
 
+import com.safesnap.backend.exception.UserNotFoundException
+import com.safesnap.backend.repository.UserRepository
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.security.core.userdetails.UserDetails
 import org.springframework.stereotype.Service
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
@@ -16,6 +19,8 @@ import java.util.*
 class S3Service(
     private val s3Client: S3Client,
     private val s3Presigner: S3Presigner,
+    private val userRepository: UserRepository,
+    private val metricsService: MetricsService,
     @Value("\${aws.s3.bucket-name}") private val bucketName: String,
     @Value("\${aws.endpoint-url:}") private val endpointUrl: String
 ) {
@@ -24,16 +29,18 @@ class S3Service(
     
     /**
      * Generate a pre-signed URL for uploading a file to S3
+     * Tracks which user uploaded which file
      */
     fun generatePresignedUploadUrl(
         fileType: FileType,
         fileExtension: String,
-        userId: Long
+        userDetails: UserDetails
     ): PresignedUrlResponse {
+        val userId = extractUserIdFromUserDetails(userDetails)
         val fileName = generateFileName(fileType, fileExtension, userId)
         val key = "${fileType.folder}/$fileName"
         
-        logger.info("Generating pre-signed upload URL for key: $key")
+        logger.info("Generating pre-signed upload URL for user $userId, key: $key")
         
         val putObjectRequest = PutObjectRequest.builder()
             .bucket(bucketName)
@@ -58,16 +65,19 @@ class S3Service(
             "https://$bucketName.s3.amazonaws.com/$key"
         }
         
-        logger.info("Generated pre-signed URL for upload. S3 URL: $s3Url")
+        logger.info("Generated pre-signed URL for upload by user $userId. S3 URL: $s3Url")
+        
+        // Record file upload metric
+        metricsService.recordFileUploaded(fileType.name)
         
         return PresignedUrlResponse(
             uploadUrl = uploadUrl,
             s3Url = s3Url,
             fileName = fileName,
-            expiresInMinutes = 15
+            expiresInMinutes = 15,
+            uploadedByUserId = userId
         )
     }
-    
 
     fun generatePresignedDownloadUrl(s3Url: String): String {
         val key = extractKeyFromS3Url(s3Url)
@@ -87,7 +97,6 @@ class S3Service(
         val presignedRequest = s3Presigner.presignGetObject(presignRequest)
         return presignedRequest.url().toString()
     }
-    
 
     fun fileExists(s3Url: String): Boolean {
         return try {
@@ -114,6 +123,17 @@ class S3Service(
             .build()
         
         return s3Client.getObjectAsBytes(getObjectRequest).asByteArray()
+    }
+    
+    /**
+     * Extract user ID from UserDetails for tracking file uploads
+     * Since users log in with email, the username in UserDetails will be the email
+     */
+    private fun extractUserIdFromUserDetails(userDetails: UserDetails): Long {
+        val email = userDetails.username
+        val user = userRepository.findByEmail(email)
+            ?: throw UserNotFoundException("User not found with email: $email")
+        return user.id
     }
     
     private fun generateFileName(fileType: FileType, extension: String, userId: Long): String {
@@ -156,5 +176,6 @@ data class PresignedUrlResponse(
     val uploadUrl: String,
     val s3Url: String,
     val fileName: String,
-    val expiresInMinutes: Int
+    val expiresInMinutes: Int,
+    val uploadedByUserId: Long
 )

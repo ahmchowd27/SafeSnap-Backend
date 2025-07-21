@@ -9,6 +9,7 @@ import com.safesnap.backend.exception.InvalidCredentialsException
 import com.safesnap.backend.exception.UserNotFoundException
 import com.safesnap.backend.jwt.JwtService
 import com.safesnap.backend.repository.UserRepository
+import com.safesnap.backend.service.MetricsService
 import org.springframework.security.authentication.AuthenticationManager
 import org.springframework.security.authentication.BadCredentialsException
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
@@ -20,7 +21,8 @@ class AuthService(
     private val userRepository: UserRepository,
     private val passwordEncoder: PasswordEncoder,
     private val jwtService: JwtService,
-    private val authenticationManager: AuthenticationManager
+    private val authenticationManager: AuthenticationManager,
+    private val metricsService: MetricsService
 ) {
     fun register(request: UserCreateDTO): AuthResponseDTO {
         // Check if email already exists
@@ -39,6 +41,9 @@ class AuthService(
         val savedUser = userRepository.save(user)
         val token = jwtService.generateToken(savedUser.email, savedUser.role)
         
+        // Record successful registration
+        metricsService.recordAuthSuccess()
+        
         return AuthResponseDTO(token, savedUser.role.name)
     }
 
@@ -55,9 +60,14 @@ class AuthService(
             // Generate token
             val token = jwtService.generateToken(user.email, user.role)
             
+            // Record successful login
+            metricsService.recordAuthSuccess()
+            
             return AuthResponseDTO(token, user.role.name)
             
         } catch (ex: BadCredentialsException) {
+            // Record failed login attempt
+            metricsService.recordAuthFailure()
             throw InvalidCredentialsException("Invalid email or password")
         }
     }

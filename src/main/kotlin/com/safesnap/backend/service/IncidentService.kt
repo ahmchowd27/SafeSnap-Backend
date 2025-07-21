@@ -22,7 +22,8 @@ import java.util.*
 class IncidentService(
     private val incidentRepository: IncidentRepository,
     private val userRepository: UserRepository,
-    private val imageProcessingService: ImageProcessingService
+    private val imageProcessingService: ImageProcessingService,
+    private val metricsService: MetricsService
 ) {
 
     fun createIncident(request: IncidentCreateDTO, userEmail: String): IncidentResponseDTO {
@@ -44,6 +45,9 @@ class IncidentService(
         )
 
         val savedIncident = incidentRepository.save(incident)
+
+        // Record incident creation metric
+        metricsService.recordIncidentCreated()
 
         // Trigger async image analysis if images are provided
         if (savedIncident.imageUrls.isNotEmpty()) {
@@ -100,7 +104,7 @@ class IncidentService(
     }
 
     fun getIncidentById(id: UUID, userEmail: String): IncidentResponseDTO {
-        val incident = incidentRepository.findById(id)
+        val incident = incidentRepository.findById(id).orElse(null)
             ?: throw IncidentNotFoundException(id)
         
         val user = userRepository.findByEmail(userEmail)
@@ -115,7 +119,7 @@ class IncidentService(
     }
 
     fun updateIncident(id: UUID, request: IncidentCreateDTO, userEmail: String): IncidentResponseDTO {
-        val incident = incidentRepository.findById(id)
+        val incident = incidentRepository.findById(id).orElse(null)
             ?: throw IncidentNotFoundException(id)
         
         val user = userRepository.findByEmail(userEmail)
@@ -151,7 +155,7 @@ class IncidentService(
     }
 
     fun deleteIncident(id: UUID, userEmail: String) {
-        val incident = incidentRepository.findById(id)
+        val incident = incidentRepository.findById(id).orElse(null)
             ?: throw IncidentNotFoundException(id)
         
         val user = userRepository.findByEmail(userEmail)
@@ -166,7 +170,7 @@ class IncidentService(
     }
 
     fun updateIncidentStatus(id: UUID, status: String, userEmail: String): IncidentResponseDTO {
-        val incident = incidentRepository.findById(id)
+        val incident = incidentRepository.findById(id).orElse(null)
             ?: throw IncidentNotFoundException(id)
         
         val user = userRepository.findByEmail(userEmail)
@@ -186,7 +190,7 @@ class IncidentService(
     }
 
     fun assignIncident(id: UUID, assigneeEmail: String, userEmail: String): IncidentResponseDTO {
-        val incident = incidentRepository.findById(id)
+        val incident = incidentRepository.findById(id).orElse(null)
             ?: throw IncidentNotFoundException(id)
         
         val manager = userRepository.findByEmail(userEmail)
