@@ -39,7 +39,7 @@ class ImageProcessingService(
                 }
 
 
-                val urls = incidentRepository.findImageUrlsByIncidentId(incidentId)
+                val urls = incident.imageUrls
                 val analyses = mutableListOf<ImageAnalysis>()
 
                 // Process each image URL

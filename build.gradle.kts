@@ -22,6 +22,18 @@ repositories {
 
 dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
+	
+	// Monitoring with Micrometer
+	implementation("io.micrometer:micrometer-registry-prometheus")
+	implementation("io.micrometer:micrometer-tracing-bridge-brave")
+	
+	// API Documentation with OpenAPI/Swagger
+	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.2.0")
+	
+	// Rate Limiting
+	implementation("com.github.vladimir-bukhtoyarov:bucket4j-core:7.6.0")
+	implementation("com.github.vladimir-bukhtoyarov:bucket4j-caffeine:7.6.0")
+	implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	implementation("org.springframework.boot:spring-boot-starter-security")
 	implementation("org.springframework.boot:spring-boot-starter-validation")

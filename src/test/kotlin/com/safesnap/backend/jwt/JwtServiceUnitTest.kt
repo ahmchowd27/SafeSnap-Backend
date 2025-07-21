@@ -48,7 +48,7 @@ class JwtServiceUnitTest {
     fun `should throw exception for token with wrong signature`() {
         // Given - Create token with different secret
         val wrongSecretService = JwtService("ZGlmZmVyZW50U2VjcmV0S2V5Rm9yVGVzdGluZ1B1cnBvc2Vz")
-        val tokenWithWrongSignature = wrongSecretService.generateToken("test@example.com", Role.USER)
+        val tokenWithWrongSignature = wrongSecretService.generateToken("test@example.com", Role.WORKER)
 
         // When & Then
         assertThrows<SignatureException> {
@@ -59,7 +59,7 @@ class JwtServiceUnitTest {
     @Test
     fun `should detect token with different username during validation`() {
         // Given
-        val token = jwtService.generateToken("user1@example.com", Role.USER)
+        val token = jwtService.generateToken("user1@example.com", Role.WORKER)
 
         // When & Then
         assertThat(jwtService.isTokenValid(token, "user2@example.com")).isFalse()

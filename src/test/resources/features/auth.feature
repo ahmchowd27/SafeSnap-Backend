@@ -9,10 +9,10 @@ Feature: User Authentication
 
   Scenario: User registers successfully
     When I register with valid user details:
-      | name     | email           | password    | role |
-      | John Doe | john@example.com| password123 | USER |
+      | name     | email           | password    | role   |
+      | John Doe | john@example.com| password123 | WORKER |
     Then I should receive a valid JWT token
-    And the response should contain role "USER"
+    And the response should contain role "WORKER"
     And the user should be saved in the database
 
   Scenario: Manager registers successfully
@@ -35,11 +35,11 @@ Feature: User Authentication
 
   Scenario: User logs in successfully
     Given a user is registered with:
-      | email           | password    | role |
-      | john@example.com| password123 | USER |
+      | email           | password    | role   |
+      | john@example.com| password123 | WORKER |
     When I login with email "john@example.com" and password "password123"
     Then I should receive a valid JWT token
-    And the response should contain role "USER"
+    And the response should contain role "WORKER"
 
   Scenario: Login fails with wrong password
     Given a user is registered with email "john@example.com"
@@ -71,5 +71,5 @@ Feature: User Authentication
 
     Examples:
       | email              | role    |
-      | user@example.com   | USER    |
+      | user@example.com   | WORKER  |
       | manager@example.com| MANAGER |

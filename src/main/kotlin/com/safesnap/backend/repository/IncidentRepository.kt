@@ -14,7 +14,7 @@ import java.util.*
 @Repository
 interface IncidentRepository : JpaRepository<Incident, UUID> {
 
-    override fun findById(id: UUID): Optional<Incident?>
+    override fun findById(id: UUID): Optional<Incident>
 
     @Query("""
         SELECT i FROM Incident i 
@@ -28,7 +28,7 @@ interface IncidentRepository : JpaRepository<Incident, UUID> {
         ORDER BY i.reportedAt DESC
     """)
     fun findIncidentsForUser(
-        @Param("userId") userId: UUID,
+        @Param("userId") userId: Long,
         @Param("status") status: IncidentStatus?,
         @Param("severity") severity: IncidentSeverity?,
         @Param("search") search: String?,
@@ -61,7 +61,7 @@ interface IncidentRepository : JpaRepository<Incident, UUID> {
         ORDER BY i.reportedAt DESC
     """)
     fun findByReportedByIdOrderByReportedAtDesc(
-        @Param("userId") userId: UUID,
+        @Param("userId") userId: Long,
         pageable: Pageable
     ): Page<Incident>
 
@@ -71,27 +71,7 @@ interface IncidentRepository : JpaRepository<Incident, UUID> {
         ORDER BY i.reportedAt DESC
     """)
     fun findByAssignedToIdOrderByReportedAtDesc(
-        @Param("userId") userId: UUID,
-        pageable: Pageable
-    ): Page<Incident>
-
-    @Query("""
-        SELECT i FROM Incident i 
-        WHERE i.status = :status 
-        ORDER BY i.reportedAt DESC
-    """)
-    fun findByStatusOrderByReportedAtDesc(
-        @Param("status") status: IncidentStatus,
-        pageable: Pageable
-    ): Page<Incident>
-
-    @Query("""
-        SELECT i FROM Incident i 
-        WHERE i.severity = :severity 
-        ORDER BY i.reportedAt DESC
-    """)
-    fun findBySeverityOrderByReportedAtDesc(
-        @Param("severity") severity: IncidentSeverity,
+        @Param("userId") userId: Long,
         pageable: Pageable
     ): Page<Incident>
 
@@ -99,52 +79,11 @@ interface IncidentRepository : JpaRepository<Incident, UUID> {
         SELECT COUNT(i) FROM Incident i 
         WHERE i.reportedBy.id = :userId
     """)
-    fun countByReportedById(@Param("userId") userId: UUID): Long
+    fun countByReportedById(@Param("userId") userId: Long): Long
 
     @Query("""
         SELECT COUNT(i) FROM Incident i 
         WHERE i.assignedTo.id = :userId
     """)
-    fun countByAssignedToId(@Param("userId") userId: UUID): Long
-
-    @Query("""
-        SELECT COUNT(i) FROM Incident i 
-        WHERE i.status = :status
-    """)
-    fun countByStatus(@Param("status") status: IncidentStatus): Long
-
-    @Query("""
-        SELECT COUNT(i) FROM Incident i 
-        WHERE i.severity = :severity
-    """)
-    fun countBySeverity(@Param("severity") severity: IncidentSeverity): Long
-
-    @Query("""
-        SELECT i FROM Incident i 
-        WHERE SIZE(i.imageUrls) > 0 
-        AND i.id NOT IN (
-            SELECT DISTINCT ia.incident.id FROM ImageAnalysis ia 
-            WHERE ia.incident.id = i.id
-        )
-        ORDER BY i.reportedAt ASC
-    """)
-    fun findIncidentsWithUnprocessedImages(): List<Incident>
-
-    @Query("""
-        SELECT i FROM Incident i 
-        WHERE SIZE(i.audioUrls) > 0 
-        AND i.id NOT IN (
-            SELECT DISTINCT vt.incident.id FROM VoiceTranscription vt 
-            WHERE vt.incident.id = i.id
-        )
-        ORDER BY i.reportedAt ASC
-    """)
-    fun findIncidentsWithUnprocessedAudio(): List<Incident>
-    // Custom repository method to eagerly fetch images
-    @Query("SELECT i FROM Incident i LEFT JOIN FETCH i.imageUrls WHERE i.id = :id")
-    fun findByIdWithImages(id: UUID): Optional<Incident>
-    // Add this to your IncidentRepository interface
-    @Query("SELECT i.imageUrls FROM Incident i WHERE i.id = :incidentId")
-    fun findImageUrlsByIncidentId(incidentId: UUID): List<String>
+    fun countByAssignedToId(@Param("userId") userId: Long): Long
 }
-
