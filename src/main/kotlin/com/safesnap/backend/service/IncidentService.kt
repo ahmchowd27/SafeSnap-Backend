@@ -2,14 +2,19 @@ package com.safesnap.backend.service
 
 import com.safesnap.backend.dto.incident.IncidentCreateDTO
 import com.safesnap.backend.dto.incident.IncidentResponseDTO
-import com.safesnap.backend.entity.Incident
-import com.safesnap.backend.entity.IncidentStatus
-import com.safesnap.backend.entity.IncidentSeverity
+import com.safesnap.backend.dto.incident.RcaResponseDTO
+import com.safesnap.backend.dto.incident.AiSuggestionDTO
+import com.safesnap.backend.dto.user.UserResponseDTO
+import com.safesnap.backend.entity.*
 import com.safesnap.backend.exception.IncidentNotFoundException
 import com.safesnap.backend.exception.UnauthorizedAccessException
 import com.safesnap.backend.exception.UserNotFoundException
 import com.safesnap.backend.repository.IncidentRepository
 import com.safesnap.backend.repository.UserRepository
+import com.safesnap.backend.repository.ImageAnalysisRepository
+import com.safesnap.backend.repository.AiSuggestionRepository
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
@@ -22,6 +27,8 @@ import java.util.*
 class IncidentService(
     private val incidentRepository: IncidentRepository,
     private val userRepository: UserRepository,
+    private val imageAnalysisRepository: ImageAnalysisRepository,
+    private val aiSuggestionRepository: AiSuggestionRepository,
     private val imageProcessingService: ImageProcessingService,
     private val metricsService: MetricsService
 ) {
@@ -52,6 +59,7 @@ class IncidentService(
         // Trigger async image analysis if images are provided
         if (savedIncident.imageUrls.isNotEmpty()) {
             imageProcessingService.processIncidentImages(savedIncident.id)
+            // TODO: After image analysis, trigger AI suggestion generation
         }
 
         return savedIncident.toResponseDTO()
@@ -144,6 +152,7 @@ class IncidentService(
             incident.imageUrls = request.imageUrls
             // Trigger image analysis for new images
             imageProcessingService.processIncidentImages(incident.id)
+            // TODO: After image analysis, trigger AI suggestion generation
         }
         
         if (!request.audioUrls.isNullOrEmpty()) {
@@ -213,7 +222,7 @@ class IncidentService(
     }
 }
 
-// Extension function to convert entity to DTO
+// Extension function to convert entity to DTO with all related data
 private fun Incident.toResponseDTO(): IncidentResponseDTO {
     return IncidentResponseDTO(
         id = this.id,
@@ -232,6 +241,37 @@ private fun Incident.toResponseDTO(): IncidentResponseDTO {
         assignedToEmail = this.assignedTo?.email,
         reportedAt = this.reportedAt,
         updatedAt = this.updatedAt,
-        updatedBy = this.updatedBy?.fullName
+        updatedBy = this.updatedBy?.fullName,
+        
+        // Populate the missing fields from entity relationships
+        rcaReport = this.rcaReport?.let { rca ->
+            RcaResponseDTO(
+                id = rca.id,
+                fiveWhys = rca.fiveWhys,
+                correctiveAction = rca.correctiveAction,
+                preventiveAction = rca.preventiveAction,
+                createdAt = rca.createdAt,
+                manager = UserResponseDTO(
+                    id = rca.manager.id,
+                    name = rca.manager.fullName,
+                    email = rca.manager.email,
+                    role = rca.manager.role
+                )
+            )
+        },
+        aiSuggestions = this.aiSuggestions.map { suggestion ->
+            AiSuggestionDTO(
+                summary = suggestion.summary,
+                keywords = try {
+                    jacksonObjectMapper().readValue<List<String>>(suggestion.keywords)
+                } catch (e: Exception) {
+                    emptyList()
+                }
+            )
+        },
+        imageTags = this.imageAnalyses.flatMap { analysis ->
+            analysis.tags.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        },
+        transcriptions = emptyList() // Audio processing on hold for now
     )
 }

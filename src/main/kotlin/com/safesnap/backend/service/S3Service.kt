@@ -67,7 +67,7 @@ class S3Service(
         
         logger.info("Generated pre-signed URL for upload by user $userId. S3 URL: $s3Url")
         
-        // Record file upload metric
+
         metricsService.recordFileUploaded(fileType.name)
         
         return PresignedUrlResponse(
