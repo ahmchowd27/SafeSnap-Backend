@@ -9,6 +9,7 @@ plugins {
 
 group = "com.safesnap"
 version = "0.0.1-SNAPSHOT"
+description = "SafeSnap - Safety Incident Reporting System for Construction and Warehouse Crews"
 
 java {
 	toolchain {
@@ -119,6 +120,19 @@ tasks.test {
 // JaCoCo configuration
 jacoco {
 	toolVersion = "0.8.11"
+}
+
+// License and project information
+tasks.jar {
+	manifest {
+		attributes(
+			"Implementation-Title" to "SafeSnap Backend API",
+			"Implementation-Version" to project.version,
+			"Implementation-Vendor" to "SafeSnap Development Team",
+			"License" to "MIT",
+			"License-File" to "LICENSE"
+		)
+	}
 }
 
 tasks.jacocoTestReport {

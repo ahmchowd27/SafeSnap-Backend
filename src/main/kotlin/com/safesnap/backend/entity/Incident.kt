@@ -12,7 +12,10 @@ import java.util.*
 data class Incident(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    val id: UUID = UUID.randomUUID(),
+    val id: UUID? = null,
+
+    @Version
+    var version: Long = 0,
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "reported_by", nullable = false)
@@ -47,12 +50,12 @@ data class Incident(
     @Column(name = "location_description")
     var locationDescription: String? = null,
 
-    @ElementCollection(fetch = FetchType.LAZY)
+    @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "incident_image_urls", joinColumns = [JoinColumn(name = "incident_id")])
     @Column(name = "image_url")
     var imageUrls: List<String> = emptyList(),
 
-    @ElementCollection(fetch = FetchType.LAZY)
+    @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "incident_audio_urls", joinColumns = [JoinColumn(name = "incident_id")])
     @Column(name = "audio_url")
     var audioUrls: List<String> = emptyList(),
@@ -87,10 +90,10 @@ data class Incident(
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
         other as Incident
-        return id == other.id
+        return id != null && id == other.id
     }
 
-    override fun hashCode(): Int = id.hashCode()
+    override fun hashCode(): Int = id?.hashCode() ?: 0
     
     override fun toString(): String = "Incident(id=$id, title='$title', status=$status, severity=$severity)"
 }
@@ -100,7 +103,10 @@ data class Incident(
 data class IncidentStatusHistory(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    val id: UUID = UUID.randomUUID(),
+    val id: UUID? = null,
+
+    @Version
+    var version: Long = 0,
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "incident_id", nullable = false)

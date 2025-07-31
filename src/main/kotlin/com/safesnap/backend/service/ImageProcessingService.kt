@@ -2,11 +2,9 @@ package com.safesnap.backend.service
 
 import com.safesnap.backend.entity.ImageAnalysis
 import com.safesnap.backend.repository.ImageAnalysisRepository
-import com.safesnap.backend.repository.IncidentRepository
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
 import java.util.*
 import java.util.concurrent.CompletableFuture
@@ -15,144 +13,97 @@ import java.util.concurrent.CompletableFuture
 class ImageProcessingService(
     private val s3Service: S3Service,
     private val googleVisionService: GoogleVisionService,
-    private val imageAnalysisRepository: ImageAnalysisRepository,
-    private val incidentRepository: IncidentRepository
+    private val imageAnalysisRepository: ImageAnalysisRepository
 ) {
-    
     private val logger = LoggerFactory.getLogger(ImageProcessingService::class.java)
-    
-    /**
-     * Process all images for an incident asynchronously
-     */
+
     @Async
-    @Transactional
-    fun processIncidentImages(incidentId: UUID): CompletableFuture<List<ImageAnalysis>> {
+    fun processIncidentImages(incidentId: UUID, imageUrls: List<String>?): CompletableFuture<List<ImageAnalysis>> {
         return CompletableFuture.supplyAsync {
-            try {
-                logger.info("Starting image processing for incident $incidentId")
-
-                // Retrieve incident with images - make sure you're using the correct repository method
-                val incident = incidentRepository.findById(incidentId).orElse(null)
-                if (incident == null) {
-                    logger.error("Incident not found: $incidentId")
-                    return@supplyAsync emptyList<ImageAnalysis>()
-                }
-
-
-                val urls = incident.imageUrls
-                val analyses = mutableListOf<ImageAnalysis>()
-
-                // Process each image URL
-                urls.forEachIndexed { index: Int, imageUrl: String ->
-                    try {
-                        logger.info("Processing image ${index + 1}/${urls.size}: $imageUrl")
-
-                        // Check if already processed
-                        val existingAnalysis = imageAnalysisRepository.findByIncidentIdAndImageUrl(incidentId, imageUrl)
-                        if (existingAnalysis != null) {
-                            logger.info("Image already processed, skipping: $imageUrl")
-                            analyses.add(existingAnalysis)
-                        } else {
-
-                            val imageBytes = downloadImageFromS3(imageUrl)
-                            if (imageBytes.isEmpty()) {
-                                logger.error("Failed to download image: $imageUrl")
-                                val failedAnalysis = createFailedAnalysis(incidentId, imageUrl, "Failed to download from S3")
-                                analyses.add(imageAnalysisRepository.save(failedAnalysis))
-                            } else {
-
-                                val analysisResult = googleVisionService.analyzeImage(imageBytes)
-                                val imageAnalysis = if (analysisResult.success) {
-                                    createSuccessfulAnalysis(incidentId, imageUrl, analysisResult)
-                                } else {
-                                    createFailedAnalysis(incidentId, imageUrl, analysisResult.errorMessage)
-                                }
-                                analyses.add(imageAnalysisRepository.save(imageAnalysis))
-                                logger.info("Successfully processed image: $imageUrl")
-                            }
-                        }
-                    } catch (e: Exception) {
-                        logger.error("Error processing image $imageUrl", e)
-                        val failedAnalysis = createFailedAnalysis(incidentId, imageUrl, "Processing error: ${e.message}")
-                        analyses.add(imageAnalysisRepository.save(failedAnalysis))
-                    }
-                }
-
-                logger.info("Completed processing ${analyses.size} images for incident $incidentId")
-                return@supplyAsync analyses
-
-            } catch (e: Exception) {
-                logger.error("Unexpected error during image processing for incident $incidentId", e)
-                return@supplyAsync emptyList<ImageAnalysis>()
+            val urls = imageUrls ?: emptyList()
+            if (urls.isEmpty()) {
+                logger.info("No images to process for incident $incidentId")
+                return@supplyAsync emptyList()
             }
+
+            val analyses = mutableListOf<ImageAnalysis>()
+            urls.forEach { imageUrl ->
+                try {
+                    val analysis = processSingleImage(incidentId, imageUrl)
+                    analyses.add(analysis)
+                } catch (e: Exception) {
+                    logger.error("Error processing image $imageUrl", e)
+                    val failed = createFailedAnalysis(incidentId, imageUrl, "Processing error: ${e.message}")
+                    analyses.add(imageAnalysisRepository.save(failed))
+                }
+            }
+
+            logger.info("Completed processing ${analyses.size} images for incident $incidentId")
+            analyses
         }
     }
-    /**
-     * Process a single image synchronously
-     */
-    @Transactional
+
     fun processSingleImage(incidentId: UUID, imageUrl: String): ImageAnalysis {
         try {
-            logger.info("Processing single image: $imageUrl for incident: $incidentId")
+            val existing = imageAnalysisRepository.findByIncidentId(incidentId)
+                .find { it.imageUrl == imageUrl }
+            if (existing != null) return existing
 
-            // Check if already processed
-            val existingAnalysis = imageAnalysisRepository.findByIncidentIdAndImageUrl(incidentId, imageUrl)
-            if (existingAnalysis != null) {
-                logger.info("Image already processed: $imageUrl")
-                return existingAnalysis
-            }
-
-            // Download and analyze
             val imageBytes = downloadImageFromS3(imageUrl)
             if (imageBytes.isEmpty()) {
-                return imageAnalysisRepository.save(createFailedAnalysis(incidentId, imageUrl, "Failed to download from S3"))
+                return imageAnalysisRepository.save(createFailedAnalysis(incidentId, imageUrl, "Failed to download"))
             }
 
-            val analysisResult = googleVisionService.analyzeImage(imageBytes)
-            val analysis = if (analysisResult.success) {
-                createSuccessfulAnalysis(incidentId, imageUrl, analysisResult)
+            val result = googleVisionService.analyzeImage(imageBytes)
+            val analysis = if (result.success) {
+                createSuccessfulAnalysis(incidentId, imageUrl, result)
             } else {
-                createFailedAnalysis(incidentId, imageUrl, analysisResult.errorMessage)
+                createFailedAnalysis(incidentId, imageUrl, result.errorMessage)
             }
 
             return imageAnalysisRepository.save(analysis)
 
         } catch (e: Exception) {
-            logger.error("Error processing single image $imageUrl", e)
-            val failedAnalysis = createFailedAnalysis(incidentId, imageUrl, "Processing error: ${e.message}")
-            return imageAnalysisRepository.save(failedAnalysis)
+            logger.error("Failed to process image $imageUrl", e)
+            return imageAnalysisRepository.save(createFailedAnalysis(incidentId, imageUrl, "Processing error: ${e.message}"))
         }
     }
-    /**
-     * Download image bytes from S3
-     */
+
     private fun downloadImageFromS3(s3Url: String): ByteArray {
         return try {
+            if (s3Url.isBlank()) {
+                logger.warn("S3 URL is blank")
+                return byteArrayOf()
+            }
+
+            logger.info("Attempting to download from S3: $s3Url")
+
             if (!s3Service.fileExists(s3Url)) {
                 logger.warn("Image file does not exist in S3: $s3Url")
                 return byteArrayOf()
             }
-            
-            s3Service.downloadFileAsBytes(s3Url)
+
+            val imageBytes = s3Service.downloadFileAsBytes(s3Url)
+
+            if (imageBytes.isEmpty()) {
+                logger.warn("Downloaded 0 bytes from S3 for $s3Url")
+            } else {
+                logger.info("Downloaded ${imageBytes.size} bytes from S3 for $s3Url")
+            }
+
+            imageBytes
         } catch (e: Exception) {
-            logger.error("Failed to download image from S3: $s3Url", e)
+            logger.error("❌ Failed to download image from S3: $s3Url", e)
             byteArrayOf()
         }
     }
-    
-    /**
-     * Create successful ImageAnalysis entity
-     */
-    private fun createSuccessfulAnalysis(
-        incidentId: UUID, 
-        imageUrl: String, 
-        result: ImageAnalysisResult
-    ): ImageAnalysis {
+
+    private fun createSuccessfulAnalysis(incidentId: UUID, imageUrl: String, result: ImageAnalysisResult): ImageAnalysis {
         val safetyTags = result.safetyTags.joinToString(", ")
-        val allLabels = result.allLabels.joinToString(", ") { 
-            "${it.description} (${String.format("%.2f", it.confidence)})" 
+        val allLabels = result.allLabels.joinToString(", ") {
+            "${it.description} (${String.format("%.2f", it.confidence)})"
         }
-        
+
         return ImageAnalysis(
             incidentId = incidentId,
             imageUrl = imageUrl,
@@ -164,15 +115,8 @@ class ImageProcessingService(
             processedAt = LocalDateTime.now()
         )
     }
-    
-    /**
-     * Create failed ImageAnalysis entity
-     */
-    private fun createFailedAnalysis(
-        incidentId: UUID, 
-        imageUrl: String, 
-        errorMessage: String?
-    ): ImageAnalysis {
+
+    private fun createFailedAnalysis(incidentId: UUID, imageUrl: String, errorMessage: String?): ImageAnalysis {
         return ImageAnalysis(
             incidentId = incidentId,
             imageUrl = imageUrl,
@@ -182,65 +126,24 @@ class ImageProcessingService(
             processedAt = LocalDateTime.now()
         )
     }
-    
-    /**
-     * Reprocess failed image analyses
-     */
-    @Async
-    @Transactional
-    fun reprocessFailedAnalyses(): CompletableFuture<Int> {
-        return CompletableFuture.supplyAsync {
-            try {
-                val failedAnalyses = imageAnalysisRepository.findByProcessedFalse()
-                var reprocessedCount = 0
-                
-                failedAnalyses.forEach { analysis ->
-                    try {
-                        logger.info("Reprocessing failed analysis: ${analysis.id}")
-                        processSingleImage(analysis.incidentId, analysis.imageUrl)
-                        reprocessedCount++
-                    } catch (e: Exception) {
-                        logger.error("Failed to reprocess analysis ${analysis.id}", e)
-                    }
-                }
-                
-                logger.info("Reprocessed $reprocessedCount failed analyses")
-                reprocessedCount
-                
-            } catch (e: Exception) {
-                logger.error("Error during batch reprocessing", e)
-                0
-            }
-        }
-    }
-    
-    /**
-     * Get processing statistics
-     */
+
     fun getProcessingStats(): ImageProcessingStats {
-        val totalProcessed = imageAnalysisRepository.count()
-        val successfulProcessed = imageAnalysisRepository.countByProcessedTrue()
-        val failedProcessed = imageAnalysisRepository.countByProcessedFalse()
-        
+        val total = imageAnalysisRepository.count()
+        val success = imageAnalysisRepository.countByProcessedTrue()
+        val failed = imageAnalysisRepository.countByProcessedFalse()
         return ImageProcessingStats(
-            totalImagesProcessed = totalProcessed,
-            successfulAnalyses = successfulProcessed,
-            failedAnalyses = failedProcessed,
-            successRate = if (totalProcessed > 0) (successfulProcessed.toDouble() / totalProcessed) * 100 else 0.0
+            totalImagesProcessed = total,
+            successfulAnalyses = success,
+            failedAnalyses = failed,
+            successRate = if (total > 0) (success.toDouble() / total) * 100 else 0.0
         )
     }
-    
-    /**
-     * Get analysis results for an incident
-     */
+
     fun getIncidentAnalyses(incidentId: UUID): List<ImageAnalysis> {
         return imageAnalysisRepository.findByIncidentIdOrderByProcessedAtDesc(incidentId)
     }
 }
 
-/**
- * Image processing statistics
- */
 data class ImageProcessingStats(
     val totalImagesProcessed: Long,
     val successfulAnalyses: Long,

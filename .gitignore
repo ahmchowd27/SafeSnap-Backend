@@ -38,3 +38,14 @@ out/
 
 ### Kotlin ###
 .kotlin
+
+### SafeSnap Test Files ###
+test-images/
+*.jpg
+*.jpeg
+*.png
+
+### Credentials & Secrets ###
+*.json
+!build.gradle*
+!package*.json

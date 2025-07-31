@@ -12,6 +12,7 @@ class GoogleVisionService(
     @Value("\${google.vision.enabled:true}") private val visionEnabled: Boolean,
     @Value("\${google.vision.mock-mode:true}") private val mockMode: Boolean,
     @Value("\${google.vision.project-id:}") private val projectId: String,
+    @Value("\${google.vision.credentials-path:}") private val credentialsPath: String,
     private val metricsService: MetricsService
 ) {
     
@@ -33,15 +34,35 @@ class GoogleVisionService(
     }
     
     /**
-     * Real Google Vision API analysis
+     * Real Google Vision API analysis with credentials from application.properties
      */
     private fun analyzeImageWithRealApi(imageBytes: ByteArray): ImageAnalysisResult {
         return metricsService.timeImageProcessing {
             try {
                 logger.info("Analyzing image with Google Vision API (project: $projectId)")
+                logger.info("Using credentials from: $credentialsPath")
                 
+                // Create client with explicit credentials if path is provided
+                val vision = if (credentialsPath.isNotBlank()) {
+                    val credentialsFile = java.io.File(credentialsPath)
+                    if (credentialsFile.exists()) {
+                        val credentials = com.google.auth.oauth2.ServiceAccountCredentials
+                            .fromStream(java.io.FileInputStream(credentialsFile))
+                        ImageAnnotatorClient.create(
+                            ImageAnnotatorSettings.newBuilder()
+                                .setCredentialsProvider { credentials }
+                                .build()
+                        )
+                    } else {
+                        logger.warn("Credentials file not found at: $credentialsPath, using default credentials")
+                        ImageAnnotatorClient.create()
+                    }
+                } else {
+                    logger.info("No credentials path specified, using default credentials")
+                    ImageAnnotatorClient.create()
+                }
 
-                ImageAnnotatorClient.create().use { vision ->
+                vision.use { client ->
                     
                     // Build the image request
                     val imgBytes = ByteString.copyFrom(imageBytes)
@@ -72,7 +93,7 @@ class GoogleVisionService(
                         .build()
                     
                     // Perform analysis
-                    val response = vision.batchAnnotateImages(listOf(request))
+                    val response = client.batchAnnotateImages(listOf(request))
                     val imageResponse = response.responsesList[0]
                     
                     if (imageResponse.hasError()) {
@@ -252,6 +273,10 @@ class GoogleVisionService(
             "enabled" to visionEnabled,
             "mock_mode" to mockMode,
             "project_id" to projectId.ifBlank { "not_configured" },
+            "credentials_path" to credentialsPath.ifBlank { "not_configured" },
+            "credentials_file_exists" to if (credentialsPath.isNotBlank()) {
+                java.io.File(credentialsPath).exists()
+            } else false,
             "status" to if (visionEnabled) {
                 if (mockMode) "MOCK_MODE" else "REAL_API"
             } else "DISABLED"

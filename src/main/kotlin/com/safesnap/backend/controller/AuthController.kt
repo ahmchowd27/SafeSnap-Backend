@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2025 SafeSnap Development Team
+ * Licensed under the MIT License
+ * See LICENSE file in the project root for full license information
+ */
 package com.safesnap.backend.controller
 
 import com.safesnap.backend.auth.AuthService

@@ -9,7 +9,7 @@ import java.util.*
 data class AiSuggestion(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    val id: UUID = UUID.randomUUID(),
+    val id: UUID? = null,
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "incident_id", nullable = false)
@@ -28,10 +28,10 @@ data class AiSuggestion(
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
         other as AiSuggestion
-        return id == other.id
+        return id != null && id == other.id
     }
 
-    override fun hashCode(): Int = id.hashCode()
+    override fun hashCode(): Int = id?.hashCode() ?: 0
     
     override fun toString(): String = "AiSuggestion(id=$id, incidentId=${incident.id})"
 }
