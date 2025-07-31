@@ -1,127 +1,193 @@
 package com.safesnap.backend.controller
 
-import com.safesnap.backend.service.GoogleVisionService
+import com.safesnap.backend.repository.ImageAnalysisRepository
 import com.safesnap.backend.service.ImageProcessingService
-import com.safesnap.backend.service.S3Service
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.*
+import java.time.LocalDateTime
+import java.util.*
 
 @RestController
 @RequestMapping("/api/image-analysis")
 class ImageAnalysisController(
     private val imageProcessingService: ImageProcessingService,
-    private val googleVisionService: GoogleVisionService,
-    private val s3Service: S3Service
+    private val imageAnalysisRepository: ImageAnalysisRepository
 ) {
 
     /**
-     * Test endpoint to analyze an image from S3 URL
+     * Process images for an incident (called after S3 upload)
      */
-    @PostMapping("/test-analyze")
-    fun testAnalyzeImage(@RequestBody request: TestAnalysisRequest): ResponseEntity<Map<String, Any>> {
+    @PostMapping("/process-incident/{incidentId}")
+    @PreAuthorize("hasRole('WORKER') or hasRole('MANAGER')")
+    fun processIncidentImages(
+        @PathVariable incidentId: UUID,
+        @RequestBody request: ProcessIncidentImagesRequest
+    ): ResponseEntity<ProcessImageResponse> {
+        
         return try {
-            // Download image from S3
-            val imageBytes = s3Service.downloadFileAsBytes(request.s3Url)
+            // Start async processing of all images
+            imageProcessingService.processIncidentImages(incidentId, request.imageUrls)
             
-            if (imageBytes.isEmpty()) {
-                return ResponseEntity.badRequest().body(mapOf(
-                    "success" to false,
-                    "error" to "Could not download image from S3 URL"
-                ))
-            }
-            
-            // Analyze with Google Vision
-            val result = googleVisionService.analyzeImage(imageBytes)
-            
-            ResponseEntity.ok(mapOf(
-                "success" to result.success,
-                "safetyTags" to result.safetyTags,
-                "allLabels" to result.allLabels.map { mapOf(
-                    "description" to it.description,
-                    "confidence" to it.confidence
-                )},
-                "objectsDetected" to result.objectsDetected.map { mapOf(
-                    "name" to it.name,
-                    "confidence" to it.confidence
-                )},
-                "textDetected" to result.textDetected,
-                "confidenceScore" to result.confidenceScore,
-                "errorMessage" to (result.errorMessage ?: "")
+            ResponseEntity.ok(ProcessImageResponse(
+                success = true,
+                message = "Image analysis started for ${request.imageUrls.size} images",
+                incidentId = incidentId,
+                imagesQueued = request.imageUrls.size
             ))
             
         } catch (e: Exception) {
-            ResponseEntity.badRequest().body(mapOf(
-                "success" to false,
-                "error" to "Analysis failed: ${e.message}"
+            ResponseEntity.badRequest().body(ProcessImageResponse(
+                success = false,
+                message = "Failed to start image processing: ${e.message}",
+                incidentId = incidentId,
+                imagesQueued = 0
             ))
         }
     }
-    
+
     /**
-     * Get processing statistics
+     * Get analysis results for an incident
      */
-    @GetMapping("/stats")
-    fun getProcessingStats(): ResponseEntity<Map<String, Any>> {
-        val stats = imageProcessingService.getProcessingStats()
+    @GetMapping("/incident/{incidentId}/results")
+    fun getIncidentAnalysisResults(@PathVariable incidentId: UUID): ResponseEntity<IncidentAnalysisResponse> {
         
-        return ResponseEntity.ok(mapOf(
-            "totalImagesProcessed" to stats.totalImagesProcessed,
-            "successfulAnalyses" to stats.successfulAnalyses,
-            "failedAnalyses" to stats.failedAnalyses,
-            "successRate" to String.format("%.2f%%", stats.successRate)
+        val analyses = imageAnalysisRepository.findByIncidentId(incidentId)
+        
+        if (analyses.isEmpty()) {
+            return ResponseEntity.ok(IncidentAnalysisResponse(
+                incidentId = incidentId,
+                totalImages = 0,
+                processedImages = 0,
+                pendingImages = 0,
+                results = emptyList(),
+                status = "NO_IMAGES"
+            ))
+        }
+        
+        val processed = analyses.filter { it.processed }
+        val pending = analyses.filter { !it.processed && it.errorMessage == null }
+        val failed = analyses.filter { !it.processed && it.errorMessage != null }
+        
+        return ResponseEntity.ok(IncidentAnalysisResponse(
+            incidentId = incidentId,
+            totalImages = analyses.size,
+            processedImages = processed.size,
+            pendingImages = pending.size,
+            failedImages = failed.size,
+            results = processed.map { analysis ->
+                ImageAnalysisResultResponse(
+                    imageUrl = analysis.imageUrl,
+                    detectedItems = analysis.tags?.split(",") ?: emptyList(),
+                    textDetected = analysis.textDetected,
+                    confidenceScore = analysis.confidenceScore,
+                    processed = analysis.processed,
+                    processedAt = analysis.processedAt,
+                    errorMessage = analysis.errorMessage
+                )
+            },
+            status = when {
+                pending.isNotEmpty() -> "PROCESSING"
+                failed.isNotEmpty() && processed.isEmpty() -> "FAILED"
+                failed.isNotEmpty() -> "PARTIAL"
+                else -> "COMPLETED"
+            }
         ))
     }
-    
+
     /**
-     * Test Google Vision API connectivity
+     * Get processing status for specific image
      */
-    @GetMapping("/test-vision")
-    fun testVisionApi(): ResponseEntity<Map<String, Any>> {
-        return try {
-            // Create a simple test image (1x1 pixel)
-            val testImageBytes = byteArrayOf(
-                -1, -40, -1, -32, 0, 16, 74, 70, 73, 70, 0, 1, 1, 1, 0, 72, 0, 72, 0, 0, -1, -37, 0, 67, 0
-            )
-            
-            val result = googleVisionService.analyzeImage(testImageBytes)
-            
-            ResponseEntity.ok(mapOf(
-                "visionApiAvailable" to result.success,
-                "message" to if (result.success) "Google Vision API is working" else "Vision API failed",
-                "errorMessage" to (result.errorMessage ?: ""),
-                "mockMode" to (result.safetyTags.contains("Construction site")) // Mock analysis indicator
-            ))
-            
-        } catch (e: Exception) {
-            ResponseEntity.ok(mapOf(
-                "visionApiAvailable" to false,
-                "message" to "Vision API test failed",
-                "error" to (e.message ?: "Unknown error")
+    @GetMapping("/incident/{incidentId}/image-status")
+    fun getImageProcessingStatus(
+        @PathVariable incidentId: UUID,
+        @RequestParam imageUrl: String
+    ): ResponseEntity<ImageProcessingStatusResponse> {
+        
+        val analysis = imageAnalysisRepository.findByIncidentIdAndImageUrl(incidentId, imageUrl)
+            ?: return ResponseEntity.notFound().build()
+        
+        return ResponseEntity.ok(ImageProcessingStatusResponse(
+            imageUrl = imageUrl,
+            status = when {
+                analysis.processed -> "COMPLETED"
+                analysis.errorMessage != null -> "FAILED"
+                else -> "PROCESSING"
+            },
+            detectedItems = analysis.tags?.split(",") ?: emptyList(),
+            textDetected = analysis.textDetected,
+            confidenceScore = analysis.confidenceScore,
+            processedAt = analysis.processedAt,
+            errorMessage = analysis.errorMessage
+        ))
+    }
+
+    /**
+     * Retry failed image processing
+     */
+    @PostMapping("/incident/{incidentId}/retry-failed")
+    @PreAuthorize("hasRole('MANAGER')")
+    fun retryFailedProcessing(@PathVariable incidentId: UUID): ResponseEntity<Map<String, Any>> {
+        
+        val failedAnalyses = imageAnalysisRepository.findByIncidentIdAndProcessedFalseAndErrorMessageIsNotNull(incidentId)
+        
+        if (failedAnalyses.isEmpty()) {
+            return ResponseEntity.ok(mapOf(
+                "message" to "No failed images found for incident",
+                "incidentId" to incidentId
             ))
         }
-    }
-    
-    /**
-     * Manually trigger image processing for testing
-     * (This would normally be called automatically when incidents are created)
-     */
-    @PostMapping("/manual-process")
-    @PreAuthorize("hasRole('MANAGER')")
-    fun manualProcessImage(@RequestBody request: ManualProcessRequest): ResponseEntity<Map<String, Any>> {
+        
+        val imageUrls = failedAnalyses.map { it.imageUrl }
+        imageProcessingService.processIncidentImages(incidentId, imageUrls)
+        
         return ResponseEntity.ok(mapOf(
-            "message" to "Manual processing endpoint ready",
-            "note" to "This would process incident ${request.incidentId} when incident service is implemented"
+            "message" to "Retrying ${imageUrls.size} failed images",
+            "incidentId" to incidentId,
+            "retriedImages" to imageUrls.size
         ))
     }
 }
 
+// Request/Response DTOs for real S3 integration
 
-data class TestAnalysisRequest(
-    val s3Url: String
+data class ProcessIncidentImagesRequest(
+    val imageUrls: List<String> // S3 URLs of uploaded images
 )
 
+data class ProcessImageResponse(
+    val success: Boolean,
+    val message: String,
+    val incidentId: UUID,
+    val imagesQueued: Int
+)
 
-data class ManualProcessRequest(
-    val incidentId: Long
+data class IncidentAnalysisResponse(
+    val incidentId: UUID,
+    val totalImages: Int,
+    val processedImages: Int,
+    val pendingImages: Int,
+    val failedImages: Int = 0,
+    val results: List<ImageAnalysisResultResponse>,
+    val status: String // NO_IMAGES, PROCESSING, COMPLETED, FAILED, PARTIAL
+)
+
+data class ImageAnalysisResultResponse(
+    val imageUrl: String,
+    val detectedItems: List<String>,
+    val textDetected: String?,
+    val confidenceScore: Double?,
+    val processed: Boolean,
+    val processedAt: LocalDateTime?,
+    val errorMessage: String?
+)
+
+data class ImageProcessingStatusResponse(
+    val imageUrl: String,
+    val status: String, // PROCESSING, COMPLETED, FAILED
+    val detectedItems: List<String>,
+    val textDetected: String?,
+    val confidenceScore: Double?,
+    val processedAt: LocalDateTime?,
+    val errorMessage: String?
 )

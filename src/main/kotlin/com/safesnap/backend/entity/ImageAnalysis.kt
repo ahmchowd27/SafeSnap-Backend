@@ -1,16 +1,20 @@
 package com.safesnap.backend.entity
 
 import jakarta.persistence.*
-import jakarta.validation.constraints.NotBlank
 import java.time.LocalDateTime
 import java.util.*
 
 @Entity
-@Table(name = "image_analysis")
+@Table(
+    name = "image_analysis",
+    uniqueConstraints = [
+        UniqueConstraint(columnNames = ["incident_id", "image_url"])
+    ]
+)
 data class ImageAnalysis(
     @Id 
     @GeneratedValue(strategy = GenerationType.UUID)
-    val id: UUID = UUID.randomUUID(),
+    val id: UUID? = null,
 
     @Column(name = "incident_id", nullable = false)
     val incidentId: UUID,
@@ -47,10 +51,10 @@ data class ImageAnalysis(
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
         other as ImageAnalysis
-        return id == other.id
+        return id != null && id == other.id
     }
 
-    override fun hashCode(): Int = id.hashCode()
+    override fun hashCode(): Int = id?.hashCode() ?: 0
     
     override fun toString(): String = "ImageAnalysis(id=$id, incidentId=$incidentId, processed=$processed)"
 }

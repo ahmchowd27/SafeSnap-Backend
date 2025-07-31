@@ -27,20 +27,20 @@ class RateLimitService {
         val refillPeriod: Duration,
         val description: String
     ) {
-        // Authentication limits
-        LOGIN_ATTEMPTS(5, 5, Duration.ofMinutes(15), "Login attempts per 15 minutes"),
-        REGISTRATION(3, 3, Duration.ofHours(1), "Registrations per hour"),
+        // Authentication limits - More generous for development
+        LOGIN_ATTEMPTS(15, 15, Duration.ofMinutes(15), "Login attempts per 15 minutes"),
+        REGISTRATION(10, 10, Duration.ofHours(1), "Registrations per hour"),
         
-        // File upload limits
-        FILE_UPLOADS(20, 20, Duration.ofHours(1), "File uploads per hour"),
-        LARGE_FILE_UPLOADS(5, 5, Duration.ofHours(1), "Large file uploads per hour"),
+        // File upload limits - Reasonable for testing
+        FILE_UPLOADS(50, 50, Duration.ofHours(1), "File uploads per hour"),
+        LARGE_FILE_UPLOADS(20, 20, Duration.ofHours(1), "Large file uploads per hour"),
         
-        // API limits
-        INCIDENT_CREATION(10, 10, Duration.ofMinutes(10), "Incident creation per 10 minutes"),
-        GENERAL_API(100, 100, Duration.ofMinutes(1), "General API calls per minute"),
+        // API limits - Generous for development
+        INCIDENT_CREATION(30, 30, Duration.ofMinutes(10), "Incident creation per 10 minutes"),
+        GENERAL_API(300, 300, Duration.ofMinutes(1), "General API calls per minute"),
         
-        // Vision API limits (expensive operations)
-        VISION_API(50, 50, Duration.ofHours(1), "Vision API calls per hour")
+        // Vision API limits - Still reasonable but not too restrictive
+        VISION_API(100, 100, Duration.ofHours(1), "Vision API calls per hour")
     }
     
     /**

@@ -52,14 +52,23 @@ class IncidentService(
         )
 
         val savedIncident = incidentRepository.save(incident)
+        println("🔧 DEBUG: Incident saved with ID: ${savedIncident.id}")
+        println("🔧 DEBUG: Image URLs: ${savedIncident.imageUrls}")
 
         // Record incident creation metric
         metricsService.recordIncidentCreated()
 
         // Trigger async image analysis if images are provided
         if (savedIncident.imageUrls.isNotEmpty()) {
-            imageProcessingService.processIncidentImages(savedIncident.id)
+            savedIncident.id?.let { id ->
+                println("🔧 DEBUG: Starting async image processing for incident $id with ${savedIncident.imageUrls.size} images")
+                println("🔧 DEBUG: Image URLs: ${savedIncident.imageUrls}")
+                imageProcessingService.processIncidentImages(id, savedIncident.imageUrls)
+                println("🔧 DEBUG: Async image processing call completed")
+            }
             // TODO: After image analysis, trigger AI suggestion generation
+        } else {
+            println("🔧 DEBUG: No images to process")
         }
 
         return savedIncident.toResponseDTO()
@@ -151,7 +160,9 @@ class IncidentService(
         if (!request.imageUrls.isNullOrEmpty()) {
             incident.imageUrls = request.imageUrls
             // Trigger image analysis for new images
-            imageProcessingService.processIncidentImages(incident.id)
+            incident.id?.let { id ->
+                imageProcessingService.processIncidentImages(id, incident.imageUrls)
+            }
             // TODO: After image analysis, trigger AI suggestion generation
         }
         
@@ -225,7 +236,7 @@ class IncidentService(
 // Extension function to convert entity to DTO with all related data
 private fun Incident.toResponseDTO(): IncidentResponseDTO {
     return IncidentResponseDTO(
-        id = this.id,
+        id = this.id!!, // Safe to use !! since we only convert saved entities
         title = this.title,
         description = this.description,
         severity = this.severity.name,

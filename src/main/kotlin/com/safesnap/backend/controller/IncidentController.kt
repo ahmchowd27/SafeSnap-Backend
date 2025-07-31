@@ -3,6 +3,7 @@ package com.safesnap.backend.controller
 import com.safesnap.backend.dto.incident.IncidentCreateDTO
 import com.safesnap.backend.dto.incident.IncidentResponseDTO
 import com.safesnap.backend.service.IncidentService
+import com.safesnap.backend.service.ImageProcessingService
 import jakarta.validation.Valid
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -15,7 +16,8 @@ import java.util.*
 @RestController
 @RequestMapping("/api/incidents")
 class IncidentController(
-    private val incidentService: IncidentService
+    private val incidentService: IncidentService,
+    private val imageProcessingService: ImageProcessingService
 ) {
 
     @PostMapping
@@ -24,6 +26,17 @@ class IncidentController(
         authentication: Authentication
     ): ResponseEntity<IncidentResponseDTO> {
         val incident = incidentService.createIncident(request, authentication.name)
+        
+        // Trigger image analysis if images are provided
+        if (request.imageUrls?.isNotEmpty() ?: throw IllegalArgumentException("Image URLs cannot be null")) {
+            try {
+                imageProcessingService.processIncidentImages(incident.id, request.imageUrls)
+            } catch (e: Exception) {
+                // Log error but don't fail incident creation
+                println("Warning: Failed to start image processing for incident ${incident.id}: ${e.message}")
+            }
+        }
+        
         return ResponseEntity.ok(incident)
     }
 

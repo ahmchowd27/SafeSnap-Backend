@@ -12,11 +12,19 @@ interface ImageAnalysisRepository : JpaRepository<ImageAnalysis, UUID> {
 
     fun findByIncidentIdOrderByProcessedAtDesc(incidentId: UUID): List<ImageAnalysis>
     
+    fun findByIncidentId(incidentId: UUID): List<ImageAnalysis>
+    
     fun findByIncidentIdAndImageUrl(incidentId: UUID, imageUrl: String): ImageAnalysis?
+    
+    fun findByIncidentIdAndProcessedTrue(incidentId: UUID): List<ImageAnalysis>
+    
+    fun findByIncidentIdAndProcessedFalseAndErrorMessageIsNotNull(incidentId: UUID): List<ImageAnalysis>
     
     fun findByProcessedFalse(): List<ImageAnalysis>
     
     fun findByProcessedTrue(): List<ImageAnalysis>
+    
+    fun findByProcessedFalseAndErrorMessageIsNotNull(): List<ImageAnalysis>
     
     fun countByProcessedTrue(): Long
     

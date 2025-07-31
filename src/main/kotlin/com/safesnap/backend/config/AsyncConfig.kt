@@ -12,9 +12,9 @@ class AsyncConfig : AsyncConfigurer {
     
     override fun getAsyncExecutor(): Executor {
         val executor = ThreadPoolTaskExecutor()
-        executor.corePoolSize = 2
-        executor.maxPoolSize = 5
-        executor.queueCapacity = 100
+        executor.corePoolSize = 1  // Reduced to prevent concurrent issues
+        executor.maxPoolSize = 2  // Reduced to prevent concurrent issues
+        executor.queueCapacity = 50
         executor.setThreadNamePrefix("ImageProcessing-")
         executor.initialize()
         return executor
