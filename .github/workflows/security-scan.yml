@@ -52,8 +52,8 @@ jobs:
           GOOGLE_VISION_ENABLED: false
           GOOGLE_VISION_MOCK_MODE: true
           AWS_S3_ENABLED: false
-          # Test JWT secret
-          JWT_SECRET: test-secret-key-for-security-testing-32chars-minimum-length
+          # Valid Base64 JWT secret (32+ characters encoded)
+          JWT_SECRET: dGVzdC1zZWNyZXQta2V5LWZvci1zZWN1cml0eS10ZXN0aW5nLTMyY2hhcnMtbWluaW11bS1sZW5ndGg=
           JWT_EXPIRATION: 86400000
         run: |
           echo "🚀 Starting SafeSnap with H2 database for security testing..."
