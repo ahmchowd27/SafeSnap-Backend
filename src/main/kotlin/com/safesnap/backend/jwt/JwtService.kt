@@ -14,7 +14,23 @@ class JwtService(
     @Value("\${jwt.secret}") private val secret: String
 ) {
     private val jwtExpiration = Duration.ofHours(24)
-    private val signingKey: SecretKey = Keys.hmacShaKeyFor(Base64.getDecoder().decode(secret))
+    private val signingKey: SecretKey = createSigningKey()
+
+    private fun createSigningKey(): SecretKey {
+        return try {
+            // Try to decode as Base64 first
+            Keys.hmacShaKeyFor(Base64.getDecoder().decode(secret))
+        } catch (e: IllegalArgumentException) {
+            // If not valid Base64, use as plain text (ensure minimum length)
+            val keyBytes = if (secret.length >= 32) {
+                secret.toByteArray()
+            } else {
+                // Pad short secrets to minimum length
+                secret.padEnd(32, '0').toByteArray()
+            }
+            Keys.hmacShaKeyFor(keyBytes)
+        }
+    }
 
     fun generateToken(username: String, role: Enum<*>): String {
         val now = Date()
