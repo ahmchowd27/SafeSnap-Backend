@@ -10,6 +10,7 @@ import jakarta.persistence.Id
 import jakarta.validation.constraints.Email
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
+import com.safesnap.backend.config.SafeSnapConstants
 
 @Entity
 @Table(name = "users")
@@ -23,7 +24,8 @@ data class User(
     val email: String,
 
     @field:NotBlank
-    @field:Size(min = 8, max = 64, message = "Password must be between 8 and 64 characters long")
+    @field:Size(min = SafeSnapConstants.MIN_PASSWORD_LENGTH, max = SafeSnapConstants.MAX_PASSWORD_LENGTH, 
+                message = "Password must be between ${SafeSnapConstants.MIN_PASSWORD_LENGTH} and ${SafeSnapConstants.MAX_PASSWORD_LENGTH} characters long")
     @Column(nullable = false)
     val password: String,
 
@@ -32,7 +34,7 @@ data class User(
     val role: Role = Role.WORKER,
 
     @field:NotBlank
-    @Column(nullable = false, length = 50)
+    @Column(nullable = false, length = SafeSnapConstants.MAX_NAME_LENGTH)
     val fullName: String
 )
 enum class Role {

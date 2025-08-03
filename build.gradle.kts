@@ -36,8 +36,8 @@ dependencies {
 	implementation("io.micrometer:micrometer-registry-prometheus")
 	implementation("io.micrometer:micrometer-tracing-bridge-brave")
 	
-	// API Documentation with OpenAPI/Swagger
-	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.2.0")
+	// API Documentation with OpenAPI/Swagger - Updated for Spring Boot 3.5.3
+	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.0")
 	
 	// Rate Limiting
 	implementation("com.github.vladimir-bukhtoyarov:bucket4j-core:7.6.0")
