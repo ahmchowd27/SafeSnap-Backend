@@ -104,7 +104,7 @@ class IncidentCategorizationService {
                tags.any { it.contains("ladder") || it.contains("stairs") || it.contains("platform") }
     }
     
-    private fun isLiftingInjury(text: String, tags: List<String>): Boolean {
+    private fun isLiftingInjury(text: String, @Suppress("UNUSED_PARAMETER") tags: List<String>): Boolean {
         val liftingKeywords = listOf(
             "lifting", "lifted", "carrying", "moving", "heavy", "strain",
             "back injury", "pulled muscle", "herniated", "manual handling",
@@ -114,7 +114,7 @@ class IncidentCategorizationService {
         return containsKeywords(text, liftingKeywords)
     }
     
-    private fun isChemicalExposure(text: String, tags: List<String>): Boolean {
+    private fun isChemicalExposure(text: String, @Suppress("UNUSED_PARAMETER") tags: List<String>): Boolean {
         val chemicalKeywords = listOf(
             "chemical", "toxic", "hazardous material", "spill", "leak", "fumes",
             "vapor", "gas", "acid", "base", "solvent", "paint", "adhesive",
@@ -157,7 +157,7 @@ class IncidentCategorizationService {
                tags.any { it.contains("fire") || it.contains("welding") || it.contains("cutting") }
     }
     
-    private fun isConfinedSpace(text: String, tags: List<String>): Boolean {
+    private fun isConfinedSpace(text: String, @Suppress("UNUSED_PARAMETER") tags: List<String>): Boolean {
         val confinedSpaceKeywords = listOf(
             "confined space", "tank", "vessel", "pit", "trench", "sewer",
             "tunnel", "vault", "silo", "oxygen", "ventilation", "atmosphere",
@@ -231,12 +231,12 @@ class IncidentCategorizationService {
                tags.count { it.contains("ladder") || it.contains("stairs") }
     }
     
-    private fun countLiftingMatches(text: String, tags: List<String>): Int {
+    private fun countLiftingMatches(text: String, @Suppress("UNUSED_PARAMETER") tags: List<String>): Int {
         val keywords = listOf("lifting", "carrying", "heavy", "back injury", "strain", "manual handling")
         return keywords.count { text.contains(it, ignoreCase = true) }
     }
     
-    private fun countChemicalMatches(text: String, tags: List<String>): Int {
+    private fun countChemicalMatches(text: String, @Suppress("UNUSED_PARAMETER") tags: List<String>): Int {
         val keywords = listOf("chemical", "toxic", "spill", "fumes", "exposure", "hazardous")
         return keywords.count { text.contains(it, ignoreCase = true) }
     }
@@ -259,7 +259,7 @@ class IncidentCategorizationService {
                tags.count { it.contains("fire") || it.contains("welding") }
     }
     
-    private fun countConfinedSpaceMatches(text: String, tags: List<String>): Int {
+    private fun countConfinedSpaceMatches(text: String, @Suppress("UNUSED_PARAMETER") tags: List<String>): Int {
         val keywords = listOf("confined space", "tank", "pit", "trench", "ventilation", "atmosphere")
         return keywords.count { text.contains(it, ignoreCase = true) }
     }

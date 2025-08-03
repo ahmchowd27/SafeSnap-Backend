@@ -184,8 +184,8 @@ class IncidentService(
         if (!request.imageUrls.isNullOrEmpty()) {
             incident.imageUrls = request.imageUrls
             // Trigger image analysis for new images
-            incident.id?.let { id ->
-                imageProcessingService.processIncidentImages(id, request.imageUrls)
+            incident.id?.let { incidentId ->
+                imageProcessingService.processIncidentImages(incidentId, request.imageUrls)
             }
         }
         
