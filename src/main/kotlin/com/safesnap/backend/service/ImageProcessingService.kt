@@ -5,6 +5,7 @@ import com.safesnap.backend.repository.ImageAnalysisRepository
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
+import com.safesnap.backend.config.SafeSnapConstants
 import java.time.LocalDateTime
 import java.util.*
 
@@ -138,7 +139,7 @@ class ImageProcessingService(
             totalImagesProcessed = total,
             successfulAnalyses = success,
             failedAnalyses = failed,
-            successRate = if (total > 0) (success.toDouble() / total) * 100 else 0.0
+            successRate = if (total > 0) (success.toDouble() / total) * SafeSnapConstants.PERCENTAGE_MULTIPLIER else 0.0
         )
     }
 

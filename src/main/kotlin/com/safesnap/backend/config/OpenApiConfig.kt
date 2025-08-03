@@ -7,6 +7,7 @@ import io.swagger.v3.oas.models.info.License
 import io.swagger.v3.oas.models.security.SecurityRequirement
 import io.swagger.v3.oas.models.security.SecurityScheme
 import io.swagger.v3.oas.models.servers.Server
+import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
@@ -20,32 +21,22 @@ class OpenApiConfig {
                 Info()
                     .title("SafeSnap API")
                     .description("""
-                        ## SafeSnap Safety Incident Reporting System
+                        SafeSnap Safety Incident Reporting System API
                         
-                        A comprehensive API for construction and warehouse safety incident reporting.
+                        Features:
+                        - JWT-based authentication
+                        - Role-based access control
+                        - File upload with S3
+                        - AI-powered analysis
                         
-                        ### Features:
-                        - 🔐 JWT-based authentication with role-based access control
-                        - 📸 Secure file upload with S3 pre-signed URLs
-                        - 🤖 AI-powered image analysis for safety detection
-                        - 📊 Incident management with advanced filtering
-                        - 👥 Role separation (WORKER/MANAGER)
-                        
-                        ### Getting Started:
-                        1. Register a new user account
-                        2. Login to receive a JWT token
-                        3. Use the token in the 'Authorization' header for protected endpoints
-                        
-                        ### Authentication:
-                        Use the 'Authorize' button below to add your JWT token.
-                        Format: `Bearer your-jwt-token-here`
+                        Authentication:
+                        Use 'Bearer your-jwt-token' in Authorization header
                     """.trimIndent())
                     .version("1.0.0")
                     .contact(
                         Contact()
-                            .name("SafeSnap Development Team")
+                            .name("SafeSnap Team")
                             .email("support@safesnap.com")
-                            .url("https://github.com/your-org/safesnap")
                     )
                     .license(
                         License()
@@ -56,12 +47,7 @@ class OpenApiConfig {
             .addServersItem(
                 Server()
                     .url("http://localhost:8080")
-                    .description("Local Development Server")
-            )
-            .addServersItem(
-                Server()
-                    .url("https://api.safesnap.com")
-                    .description("Production Server")
+                    .description("Local Development")
             )
             .addSecurityItem(SecurityRequirement().addList("JWT"))
             .components(
@@ -71,8 +57,15 @@ class OpenApiConfig {
                             .type(SecurityScheme.Type.HTTP)
                             .scheme("bearer")
                             .bearerFormat("JWT")
-                            .description("JWT token obtained from /api/auth/login endpoint")
                     )
             )
+    }
+
+    @Bean
+    fun publicApi(): GroupedOpenApi {
+        return GroupedOpenApi.builder()
+            .group("public")
+            .pathsToMatch("/api/**")
+            .build()
     }
 }

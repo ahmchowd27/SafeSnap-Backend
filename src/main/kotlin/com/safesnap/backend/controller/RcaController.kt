@@ -2,6 +2,7 @@ package com.safesnap.backend.controller
 
 import com.safesnap.backend.dto.incident.RcaCreateDTO
 import com.safesnap.backend.dto.incident.RcaResponseDTO
+import com.safesnap.backend.exception.IncidentNotFoundException
 import com.safesnap.backend.service.RcaAiService
 import com.safesnap.backend.service.RcaStatistics
 import com.safesnap.backend.service.RcaServiceHealth
@@ -15,6 +16,7 @@ import java.util.*
 
 @RestController
 @RequestMapping("/api/incidents/{incidentId}/rca")
+@io.swagger.v3.oas.annotations.Hidden  // Temporarily hide from OpenAPI
 class RcaController(
     private val rcaAiService: RcaAiService
 ) {
@@ -154,12 +156,64 @@ class RcaManagementController(
         val response = pendingReviews.map { RcaAiSuggestionResponseDTO.fromEntity(it) }
         return ResponseEntity.ok(response)
     }
+
+    /**
+     * Get RCA suggestions with internal metrics (admin/monitoring only)
+     * GET /api/rca/admin/suggestions/{incidentId}
+     */
+    @GetMapping("/admin/suggestions/{incidentId}")
+    @PreAuthorize("hasRole('MANAGER')")
+    fun getRcaSuggestionsWithMetrics(
+        @PathVariable incidentId: UUID
+    ): ResponseEntity<RcaAiSuggestionInternalDTO> {
+        val suggestion = rcaAiService.getRcaSuggestions(incidentId)
+            ?: throw IncidentNotFoundException(incidentId)
+        return ResponseEntity.ok(RcaAiSuggestionInternalDTO.fromEntity(suggestion))
+    }
 }
 
 /**
- * DTO for RCA AI suggestions response
+ * DTO for RCA AI suggestions response (public API - no internal metrics)
  */
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
 data class RcaAiSuggestionResponseDTO(
+    val id: UUID,
+    val incidentId: UUID,
+    val incidentTitle: String,
+    val suggestedFiveWhys: String,
+    val suggestedCorrectiveAction: String,
+    val suggestedPreventiveAction: String,
+    val incidentCategory: String,
+    val status: String,
+    val generatedAt: String,
+    val reviewedAt: String?,
+    val reviewedByName: String?,
+    val errorMessage: String?
+) {
+    companion object {
+        fun fromEntity(suggestion: RcaAiSuggestion): RcaAiSuggestionResponseDTO {
+            return RcaAiSuggestionResponseDTO(
+                id = suggestion.id!!,
+                incidentId = suggestion.incident.id!!,
+                incidentTitle = suggestion.incident.title,
+                suggestedFiveWhys = suggestion.suggestedFiveWhys,
+                suggestedCorrectiveAction = suggestion.suggestedCorrectiveAction,
+                suggestedPreventiveAction = suggestion.suggestedPreventiveAction,
+                incidentCategory = suggestion.incidentCategory.name,
+                status = suggestion.status.name,
+                generatedAt = suggestion.generatedAt.toString(),
+                reviewedAt = suggestion.reviewedAt?.toString(),
+                reviewedByName = suggestion.reviewedBy?.fullName,
+                errorMessage = suggestion.errorMessage
+            )
+        }
+    }
+}
+
+/**
+ * Internal DTO for RCA AI suggestions with metrics (admin/monitoring only)
+ */
+data class RcaAiSuggestionInternalDTO(
     val id: UUID,
     val incidentId: UUID,
     val incidentTitle: String,
@@ -179,8 +233,8 @@ data class RcaAiSuggestionResponseDTO(
     val errorMessage: String?
 ) {
     companion object {
-        fun fromEntity(suggestion: RcaAiSuggestion): RcaAiSuggestionResponseDTO {
-            return RcaAiSuggestionResponseDTO(
+        fun fromEntity(suggestion: RcaAiSuggestion): RcaAiSuggestionInternalDTO {
+            return RcaAiSuggestionInternalDTO(
                 id = suggestion.id!!,
                 incidentId = suggestion.incident.id!!,
                 incidentTitle = suggestion.incident.title,

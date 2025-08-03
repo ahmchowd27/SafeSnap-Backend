@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
+import org.slf4j.LoggerFactory
 import java.util.*
 
 @RestController
@@ -19,6 +20,7 @@ class IncidentController(
     private val incidentService: IncidentService,
     private val imageProcessingService: ImageProcessingService
 ) {
+    private val logger = LoggerFactory.getLogger(IncidentController::class.java)
 
     @PostMapping
     fun createIncident(
@@ -33,7 +35,7 @@ class IncidentController(
                 imageProcessingService.processIncidentImages(incident.id, request.imageUrls)
             } catch (e: Exception) {
                 // Log error but don't fail incident creation
-                println("Warning: Failed to start image processing for incident ${incident.id}: ${e.message}")
+                logger.warn("Failed to start image processing for incident ${incident.id}", e)
             }
         }
         

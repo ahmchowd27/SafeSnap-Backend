@@ -15,14 +15,16 @@ import com.safesnap.backend.repository.UserRepository
 import com.safesnap.backend.repository.ImageAnalysisRepository
 import com.safesnap.backend.repository.AiSuggestionRepository
 import com.safesnap.backend.repository.RcaAiSuggestionRepository
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.fasterxml.jackson.module.kotlin.readValue
+
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionSynchronization
+import org.slf4j.LoggerFactory
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import java.time.LocalDateTime
 import java.util.*
 
@@ -39,6 +41,7 @@ class IncidentService(
     private val rcaAiService: RcaAiService,
     private val metricsService: MetricsService
 ) {
+    private val logger = LoggerFactory.getLogger(IncidentService::class.java)
     fun createIncident(request: IncidentCreateDTO, userEmail: String): IncidentResponseDTO {
         val user = userRepository.findByEmail(userEmail)
             ?: throw UserNotFoundException(userEmail)
@@ -58,8 +61,8 @@ class IncidentService(
         )
 
         val savedIncident = incidentRepository.save(incident)
-        println("🔧 DEBUG: Incident saved with ID: ${savedIncident.id}")
-        println("🔧 DEBUG: Image URLs: ${savedIncident.imageUrls}")
+        logger.debug("Incident saved with ID: ${savedIncident.id}")
+        logger.debug("Image URLs: ${savedIncident.imageUrls}")
 
         // Record metric
         metricsService.recordIncidentCreated()
@@ -68,13 +71,13 @@ class IncidentService(
         if (savedIncident.imageUrls.isNotEmpty() && savedIncident.id != null) {
             TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
                 override fun afterCommit() {
-                    println("🔧 DEBUG: Starting async image processing for incident ${savedIncident.id} with ${savedIncident.imageUrls.size} images")
+                    logger.debug("Starting async image processing for incident ${savedIncident.id} with ${savedIncident.imageUrls.size} images")
                     imageProcessingService.processIncidentImages(savedIncident.id!!, savedIncident.imageUrls)
-                    println("🔧 DEBUG: Async image processing call completed")
+                    logger.debug("Async image processing call completed")
                 }
             })
         } else {
-            println("🔧 DEBUG: No images to process")
+            logger.debug("No images to process")
         }
 
         // ✅ Delay RCA generation until AFTER commit too
@@ -82,11 +85,11 @@ class IncidentService(
             TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
                 override fun afterCommit() {
                     try {
-                        println("🔧 DEBUG: Triggering RCA generation for incident ${savedIncident.id}")
+                        logger.debug("Triggering RCA generation for incident ${savedIncident.id}")
                         rcaAiService.generateRcaSuggestionsAsync(savedIncident.id!!)
-                        println("🔧 DEBUG: RCA generation triggered successfully")
+                        logger.debug("RCA generation triggered successfully")
                     } catch (e: Exception) {
-                        println("⚠️ WARNING: Failed to trigger RCA generation for incident ${savedIncident.id}: ${e.message}")
+                        logger.warn("Failed to trigger RCA generation for incident ${savedIncident.id}", e)
                     }
                 }
             })

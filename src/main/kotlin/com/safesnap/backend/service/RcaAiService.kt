@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import com.safesnap.backend.config.SafeSnapConstants
 import java.time.LocalDateTime
 import java.util.*
 import java.util.concurrent.CompletableFuture
@@ -312,15 +313,13 @@ class RcaAiService(
      * Check if manager modified the AI suggestions
      */
     private fun isContentModified(suggestion: RcaAiSuggestion, finalRca: RcaCreateDTO): Boolean {
-        val similarityThreshold = 0.8 // 80% similarity
-        
         val fiveWhysSimilarity = calculateSimilarity(suggestion.suggestedFiveWhys, finalRca.fiveWhys)
         val correctiveSimilarity = calculateSimilarity(suggestion.suggestedCorrectiveAction, finalRca.correctiveAction)
         val preventiveSimilarity = calculateSimilarity(suggestion.suggestedPreventiveAction, finalRca.preventiveAction)
         
         val averageSimilarity = (fiveWhysSimilarity + correctiveSimilarity + preventiveSimilarity) / 3
         
-        return averageSimilarity < similarityThreshold
+        return averageSimilarity < SafeSnapConstants.SIMILARITY_THRESHOLD
     }
     
     /**
@@ -372,7 +371,7 @@ class RcaAiService(
             approvedCount = approved,
             modifiedCount = modified,
             failedCount = failed,
-            successRate = if (total > 0) ((generated + reviewed + approved + modified).toDouble() / total) * 100 else 0.0,
+            successRate = if (total > 0) ((generated + reviewed + approved + modified).toDouble() / total) * SafeSnapConstants.PERCENTAGE_MULTIPLIER else 0.0,
             averageProcessingTimeMs = avgProcessingTime,
             averageTokenUsage = avgTokenUsage
         )

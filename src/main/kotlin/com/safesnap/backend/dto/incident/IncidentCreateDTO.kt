@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.DecimalMax
 import jakarta.validation.constraints.DecimalMin
+import com.safesnap.backend.config.SafeSnapConstants
 
 data class IncidentCreateDTO(
     @field:NotBlank(message = "Title is required")
@@ -15,12 +16,12 @@ data class IncidentCreateDTO(
     @field:NotNull(message = "Severity is required")
     val severity: String, // LOW, MEDIUM, HIGH, CRITICAL
     
-    @field:DecimalMin(value = "-90.0", message = "Latitude must be between -90 and 90")
-    @field:DecimalMax(value = "90.0", message = "Latitude must be between -90 and 90")
+    @field:DecimalMin(value = SafeSnapConstants.MIN_LATITUDE.toString(), message = "Latitude must be between -90 and 90")
+    @field:DecimalMax(value = SafeSnapConstants.MAX_LATITUDE.toString(), message = "Latitude must be between -90 and 90")
     val latitude: Double?,
     
-    @field:DecimalMin(value = "-180.0", message = "Longitude must be between -180 and 180")
-    @field:DecimalMax(value = "180.0", message = "Longitude must be between -180 and 180")
+    @field:DecimalMin(value = SafeSnapConstants.MIN_LONGITUDE.toString(), message = "Longitude must be between -180 and 180")
+    @field:DecimalMax(value = SafeSnapConstants.MAX_LONGITUDE.toString(), message = "Longitude must be between -180 and 180")
     val longitude: Double?,
     
     val locationDescription: String? = null,

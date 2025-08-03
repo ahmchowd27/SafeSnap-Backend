@@ -89,8 +89,9 @@ wait_for_rca() {
   while [ $elapsed -lt $max_wait ]; do
     result=$(curl -s -X GET "$BACKEND_URL/api/incidents/$incidentId/rca/suggestions" \
       -H "Authorization: Bearer $token")
-    count=$(echo "$result" | jq '. | length' 2>/dev/null || echo "0")
-    if [ "$count" -gt 0 ]; then
+    # Check if result has an id field (indicating a valid suggestion)
+    hasId=$(echo "$result" | jq -r '.id' 2>/dev/null || echo "")
+    if [ "$hasId" != "null" ] && [ "$hasId" != "" ]; then
       echo "✅ RCA suggestions ready after $elapsed seconds"
       echo "$result" | jq .
       return
@@ -105,13 +106,32 @@ wait_for_rca() {
 approve_rca() {
   local token=$1
   local incidentId=$2
+  
+  # First, get the AI suggestions to use as base content
+  echo "📋 Getting AI suggestions for approval..."
+  suggestions=$(curl -s -X GET "$BACKEND_URL/api/incidents/$incidentId/rca/suggestions" \
+    -H "Authorization: Bearer $token")
+  
+  # Extract the AI-generated content
+  fiveWhys=$(echo "$suggestions" | jq -r '.suggestedFiveWhys')
+  correctiveAction=$(echo "$suggestions" | jq -r '.suggestedCorrectiveAction')
+  preventiveAction=$(echo "$suggestions" | jq -r '.suggestedPreventiveAction')
+  
+  # Mark as reviewed first
   curl -s -X POST "$BACKEND_URL/api/incidents/$incidentId/rca/suggestions/review" \
     -H "Authorization: Bearer $token"
+  
+  # Create RCA with AI-generated content (manager can modify if needed)
+  payload=$(jq -n \
+    --arg fiveWhys "$fiveWhys" \
+    --arg correctiveAction "$correctiveAction" \
+    --arg preventiveAction "$preventiveAction" \
+    '{fiveWhys: $fiveWhys, correctiveAction: $correctiveAction, preventiveAction: $preventiveAction}')
+  
   curl -s -X POST "$BACKEND_URL/api/incidents/$incidentId/rca/approve" \
     -H "Authorization: Bearer $token" \
     -H "Content-Type: application/json" \
-    -d '{"fiveWhys":"1. PPE missing\n2. Rushed\n3. No briefing","correctiveAction":"Enforce PPE checks","preventiveAction":"Daily safety automation"}' \
-    | jq .
+    -d "$payload" | jq .
 }
 
 verify_rca_linked() {

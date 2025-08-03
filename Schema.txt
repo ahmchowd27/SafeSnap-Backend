@@ -1,0 +1,713 @@
+# SafeSnap API Schema Reference
+
+> **Base URL:** `http://localhost:8080/api` (Local Development)
+> **Authentication:** Bearer JWT Token in Authorization header
+> **Content-Type:** `application/json`
+
+## 🔐 Authentication Endpoints
+
+### POST /auth/register
+**Purpose:** Register a new user account
+
+**Request:**
+```json
+{
+  "name": "John Worker",
+  "email": "john@company.com",
+  "password": "SecurePass123!",
+  "role": "WORKER"  // or "MANAGER"
+}
+```
+
+**Response (200):**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": 1,
+    "name": "John Worker",
+    "email": "john@company.com",
+    "role": "WORKER"
+  }
+}
+```
+
+**Validation Rules:**
+- `name`: Required, max 50 characters
+- `email`: Required, valid email format, unique
+- `password`: Required, 8-64 characters
+- `role`: Required, either "WORKER" or "MANAGER"
+
+---
+
+### POST /auth/login
+**Purpose:** Login existing user
+
+**Request:**
+```json
+{
+  "email": "john@company.com",
+  "password": "SecurePass123!"
+}
+```
+
+**Response (200):**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": 1,
+    "name": "John Worker",
+    "email": "john@company.com",
+    "role": "WORKER"
+  }
+}
+```
+
+**Error Response (401):**
+```json
+{
+  "timestamp": "2025-08-03T17:30:51.896907",
+  "status": 401,
+  "error": "Authentication Failed",
+  "message": "Invalid email or password",
+  "path": "/api/auth/login"
+}
+```
+
+---
+
+## 📝 Incident Management Endpoints
+
+### GET /incidents
+**Purpose:** Get user's incidents (paginated)
+**Auth:** Required
+**Query Parameters:**
+- `page`: Page number (default: 0)
+- `size`: Page size (default: 20, max: 100)
+- `status`: Filter by status (OPEN, IN_PROGRESS, UNDER_REVIEW, RESOLVED, CLOSED, CANCELLED)
+- `severity`: Filter by severity (LOW, MEDIUM, HIGH, CRITICAL)
+- `search`: Search in title, description, location
+
+**Response (200):**
+```json
+{
+  "content": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "title": "PPE Violation Observed",
+      "description": "Worker not wearing hard hat in construction zone",
+      "severity": "HIGH",
+      "status": "OPEN",
+      "latitude": 42.36,
+      "longitude": -71.05,
+      "locationDescription": "Construction Site A, Zone 3",
+      "imageUrls": [
+        "https://safesnaptest.s3.amazonaws.com/incidents/images/user_1_1754188052787_2f78c44e.jpg"
+      ],
+      "audioUrls": [],
+      "reportedBy": "John Worker",
+      "reportedByEmail": "john@company.com",
+      "assignedTo": null,
+      "assignedToEmail": null,
+      "reportedAt": "2025-08-03T14:30:22.138",
+      "updatedAt": null,
+      "updatedBy": null,
+      "rcaReport": null,
+      "rcaAiSuggestions": null,
+      "aiSuggestions": [],
+      "imageTags": ["Hard hat", "Personal protective equipment", "Construction worker"],
+      "transcriptions": []
+    }
+  ],
+  "pageable": {
+    "pageNumber": 0,
+    "pageSize": 20,
+    "sort": {
+      "sorted": true,
+      "ascending": false
+    }
+  },
+  "totalElements": 1,
+  "totalPages": 1,
+  "first": true,
+  "last": true,
+  "numberOfElements": 1
+}
+```
+
+---
+
+### POST /incidents
+**Purpose:** Create new incident report
+**Auth:** Required
+
+**Request:**
+```json
+{
+  "title": "Safety Issue Observed",
+  "description": "Detailed description of the safety incident",
+  "severity": "HIGH",
+  "latitude": 42.36,
+  "longitude": -71.05,
+  "locationDescription": "Building A, Floor 2",
+  "imageUrls": [
+    "https://safesnaptest.s3.amazonaws.com/incidents/images/uploaded_image.jpg"
+  ],
+  "audioUrls": [
+    "https://safesnaptest.s3.amazonaws.com/incidents/audio/voice_note.mp3"
+  ]
+}
+```
+
+**Response (200):**
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "title": "Safety Issue Observed",
+  "description": "Detailed description of the safety incident",
+  "severity": "HIGH",
+  "status": "OPEN",
+  "latitude": 42.36,
+  "longitude": -71.05,
+  "locationDescription": "Building A, Floor 2",
+  "imageUrls": [
+    "https://safesnaptest.s3.amazonaws.com/incidents/images/uploaded_image.jpg"
+  ],
+  "audioUrls": [
+    "https://safesnaptest.s3.amazonaws.com/incidents/audio/voice_note.mp3"
+  ],
+  "reportedBy": "John Worker",
+  "reportedByEmail": "john@company.com",
+  "assignedTo": null,
+  "assignedToEmail": null,
+  "reportedAt": "2025-08-03T14:30:22.138",
+  "updatedAt": null,
+  "updatedBy": null,
+  "rcaReport": null,
+  "rcaAiSuggestions": null,
+  "aiSuggestions": [],
+  "imageTags": [],
+  "transcriptions": []
+}
+```
+
+**Validation Rules:**
+- `title`: Required, not blank
+- `description`: Required, not blank
+- `severity`: Required, one of: LOW, MEDIUM, HIGH, CRITICAL
+- `latitude`: Optional, -90.0 to 90.0
+- `longitude`: Optional, -180.0 to 180.0
+- `imageUrls`: Optional array of S3 URLs
+- `audioUrls`: Optional array of S3 URLs
+
+---
+
+### GET /incidents/{id}
+**Purpose:** Get specific incident details
+**Auth:** Required (own incidents or manager)
+
+**Response (200):**
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "title": "PPE Violation Observed",
+  "description": "Worker not wearing hard hat in construction zone",
+  "severity": "HIGH",
+  "status": "OPEN",
+  "latitude": 42.36,
+  "longitude": -71.05,
+  "locationDescription": "Construction Site A, Zone 3",
+  "imageUrls": [
+    "https://safesnaptest.s3.amazonaws.com/incidents/images/user_1_1754188052787_2f78c44e.jpg"
+  ],
+  "audioUrls": [],
+  "reportedBy": "John Worker",
+  "reportedByEmail": "john@company.com",
+  "assignedTo": "Jane Manager",
+  "assignedToEmail": "jane@company.com",
+  "reportedAt": "2025-08-03T14:30:22.138",
+  "updatedAt": "2025-08-03T15:45:10.123",
+  "updatedBy": "Jane Manager",
+  "rcaReport": {
+    "id": 17,
+    "fiveWhys": "1. PPE missing\n2. Rushed\n3. No briefing\n4. Poor supervision\n5. Inadequate training",
+    "correctiveAction": "Implement PPE checks before work begins",
+    "preventiveAction": "Daily safety briefings and PPE station setup",
+    "createdAt": "2025-08-03T16:00:00.000",
+    "manager": {
+      "id": 8,
+      "name": "Jane Manager",
+      "email": "jane@company.com",
+      "role": "MANAGER"
+    }
+  },
+  "rcaAiSuggestions": {
+    "suggestedFiveWhys": "1. Why did this PPE violation occur?\n- The construction worker was not wearing a hard hat...",
+    "suggestedCorrectiveAction": "- Conduct immediate retraining for all workers...",
+    "suggestedPreventiveAction": "- Install PPE stations at key entry points...",
+    "reviewedByManager": "Jane Manager"
+  },
+  "aiSuggestions": [],
+  "imageTags": ["Hard hat", "Personal protective equipment", "Construction worker"],
+  "transcriptions": []
+}
+```
+
+---
+
+### PUT /incidents/{id}
+**Purpose:** Update incident (own incidents or manager)
+**Auth:** Required
+
+**Request:** Same as POST /incidents
+
+**Response:** Same as incident object
+
+---
+
+### DELETE /incidents/{id}
+**Purpose:** Delete incident (managers only)
+**Auth:** Required (MANAGER role)
+
+**Response (204):** No content
+
+---
+
+### GET /incidents/all
+**Purpose:** Get all team incidents (managers only)
+**Auth:** Required (MANAGER role)
+**Query Parameters:** Same as GET /incidents
+
+**Response:** Same pagination structure as GET /incidents
+
+---
+
+### PATCH /incidents/{id}/status
+**Purpose:** Update incident status (managers only)
+**Auth:** Required (MANAGER role)
+**Query Parameters:**
+- `status`: Required, one of: OPEN, IN_PROGRESS, UNDER_REVIEW, RESOLVED, CLOSED, CANCELLED
+
+**Response:** Updated incident object
+
+---
+
+### PATCH /incidents/{id}/assign
+**Purpose:** Assign incident to team member (managers only)
+**Auth:** Required (MANAGER role)
+**Query Parameters:**
+- `assigneeEmail`: Required, email of user to assign to
+
+**Response:** Updated incident object
+
+---
+
+## 📁 File Upload Endpoints
+
+### GET /s3/presigned-url/upload
+**Purpose:** Get pre-signed URL for file upload
+**Auth:** Required
+**Query Parameters:**
+- `fileName`: Required, name of file to upload
+- `fileType`: Required, MIME type (image/jpeg, image/png, audio/mp3, etc.)
+
+**Response (200):**
+```json
+{
+  "uploadUrl": "https://safesnaptest.s3.amazonaws.com/incidents/images/...",
+  "fileUrl": "https://safesnaptest.s3.amazonaws.com/incidents/images/final_url.jpg",
+  "expiresInSeconds": 3600
+}
+```
+
+**Usage Flow:**
+1. Get pre-signed URL from this endpoint
+2. Upload file directly to S3 using the `uploadUrl` (PUT request)
+3. Use the `fileUrl` in incident creation/update
+
+---
+
+### GET /s3/presigned-url/download
+**Purpose:** Get pre-signed URL for file download
+**Auth:** Required
+**Query Parameters:**
+- `fileUrl`: Required, S3 file URL to get download link for
+
+**Response (200):**
+```json
+{
+  "downloadUrl": "https://safesnaptest.s3.amazonaws.com/incidents/images/...",
+  "expiresInSeconds": 3600
+}
+```
+
+---
+
+## 🤖 AI Analysis Endpoints
+
+### POST /image-analysis/analyze
+**Purpose:** Analyze image for safety hazards
+**Auth:** Required
+
+**Request:**
+```json
+{
+  "imageUrl": "https://safesnaptest.s3.amazonaws.com/incidents/images/image.jpg",
+  "incidentId": "123e4567-e89b-12d3-a456-426614174000"
+}
+```
+
+**Response (200):**
+```json
+{
+  "imageUrl": "https://safesnaptest.s3.amazonaws.com/incidents/images/image.jpg",
+  "tags": ["Hard hat", "Personal protective equipment", "Construction worker"],
+  "confidenceScore": 0.85,
+  "processed": true,
+  "processedAt": "2025-08-03T14:35:22.000"
+}
+```
+
+---
+
+### GET /image-analysis/status
+**Purpose:** Check Google Vision API health
+**Auth:** Required
+
+**Response (200):**
+```json
+{
+  "status": "healthy",
+  "apiEnabled": true,
+  "lastSuccessfulCall": "2025-08-03T14:30:00.000",
+  "errorCount": 0
+}
+```
+
+---
+
+## 📊 RCA (Root Cause Analysis) Endpoints
+
+### GET /incidents/{incidentId}/rca/suggestions
+**Purpose:** Get AI-generated RCA suggestions (managers only)
+**Auth:** Required (MANAGER role)
+
+**Response (200):**
+```json
+{
+  "id": "rca-uuid-here",
+  "incidentId": "123e4567-e89b-12d3-a456-426614174000",
+  "incidentTitle": "PPE Violation Observed",
+  "suggestedFiveWhys": "1. Why did this PPE violation occur?\n- The construction worker was not wearing a hard hat...",
+  "suggestedCorrectiveAction": "- Conduct immediate retraining for all workers...",
+  "suggestedPreventiveAction": "- Install PPE stations at key entry points...",
+  "incidentCategory": "PPE_VIOLATION",
+  "status": "GENERATED",
+  "generatedAt": "2025-08-03T14:32:00.000",
+  "reviewedAt": null,
+  "reviewedByName": null,
+  "errorMessage": null
+}
+```
+
+---
+
+### POST /incidents/{incidentId}/rca/suggestions/review
+**Purpose:** Mark RCA suggestions as reviewed (managers only)
+**Auth:** Required (MANAGER role)
+
+**Response (200):** Same as GET suggestions with status "REVIEWED"
+
+---
+
+### POST /incidents/{incidentId}/rca/suggestions/approve
+**Purpose:** Approve RCA suggestions (makes visible to workers)
+**Auth:** Required (MANAGER role)
+
+**Response (200):** Same as GET suggestions with status "APPROVED"
+
+---
+
+### POST /incidents/{incidentId}/rca/approve
+**Purpose:** Create final RCA report from suggestions
+**Auth:** Required (MANAGER role)
+
+**Request:**
+```json
+{
+  "fiveWhys": "1. PPE missing\n2. Rushed\n3. No briefing\n4. Poor supervision\n5. Inadequate training",
+  "correctiveAction": "Implement PPE checks before work begins",
+  "preventiveAction": "Daily safety briefings and PPE station setup"
+}
+```
+
+**Response (200):**
+```json
+{
+  "id": 17,
+  "fiveWhys": "1. PPE missing\n2. Rushed\n3. No briefing\n4. Poor supervision\n5. Inadequate training",
+  "correctiveAction": "Implement PPE checks before work begins",
+  "preventiveAction": "Daily safety briefings and PPE station setup",
+  "createdAt": "2025-08-03T16:00:00.000",
+  "manager": {
+    "id": 8,
+    "name": "Jane Manager",
+    "email": "jane@company.com",
+    "role": "MANAGER"
+  }
+}
+```
+
+---
+
+## 📈 Metrics & Monitoring Endpoints
+
+### GET /metrics/summary
+**Purpose:** Get business metrics summary
+**Auth:** Required
+
+**Response (200):**
+```json
+{
+  "totalIncidents": 150,
+  "openIncidents": 25,
+  "resolvedIncidents": 120,
+  "totalUsers": 45,
+  "activeWorkers": 38,
+  "totalManagers": 7,
+  "averageResolutionTimeHours": 24.5,
+  "incidentsByStatus": {
+    "OPEN": 25,
+    "IN_PROGRESS": 8,
+    "UNDER_REVIEW": 2,
+    "RESOLVED": 120,
+    "CLOSED": 100,
+    "CANCELLED": 5
+  },
+  "incidentsBySeverity": {
+    "LOW": 60,
+    "MEDIUM": 50,
+    "HIGH": 30,
+    "CRITICAL": 10
+  }
+}
+```
+
+---
+
+### GET /rca/statistics
+**Purpose:** Get RCA generation statistics (managers only)
+**Auth:** Required (MANAGER role)
+
+**Response (200):**
+```json
+{
+  "totalSuggestions": 89,
+  "generatedCount": 15,
+  "reviewedCount": 25,
+  "approvedCount": 40,
+  "modifiedCount": 8,
+  "failedCount": 1,
+  "successRate": 98.9,
+  "averageProcessingTimeMs": 4500.0,
+  "averageTokenUsage": 850.0
+}
+```
+
+---
+
+## ❌ Error Response Format
+
+All endpoints return errors in this consistent format:
+
+**Validation Error (400):**
+```json
+{
+  "timestamp": "2025-08-03T17:30:51.896907",
+  "status": 400,
+  "error": "Validation Failed",
+  "message": "Invalid input data",
+  "path": "/api/incidents",
+  "validationErrors": {
+    "title": "Title is required",
+    "severity": "Severity must be one of: LOW, MEDIUM, HIGH, CRITICAL"
+  }
+}
+```
+
+**Authentication Error (401):**
+```json
+{
+  "timestamp": "2025-08-03T17:30:51.896907",
+  "status": 401,
+  "error": "Unauthorized",
+  "message": "Authentication required",
+  "path": "/api/incidents"
+}
+```
+
+**Not Found Error (404):**
+```json
+{
+  "timestamp": "2025-08-03T17:30:51.896907",
+  "status": 404,
+  "error": "Not Found",
+  "message": "Incident not found",
+  "path": "/api/incidents/invalid-id"
+}
+```
+
+**Rate Limit Error (429):**
+```json
+{
+  "error": "Rate Limit Exceeded",
+  "message": "Too many requests. 5 login attempts per 15 minutes allowed",
+  "remaining": 0,
+  "retryAfterSeconds": 900
+}
+```
+
+---
+
+## 🔧 Rate Limits
+
+| Endpoint | Limit | Window |
+|----------|--------|---------|
+| `/auth/login` | 5 attempts | 15 minutes |
+| `/auth/register` | 3 attempts | 1 hour |
+| `/s3/presigned-url/upload` | 20 requests | 1 hour |
+| `/incidents` (POST) | 10 requests | 10 minutes |
+| `/image-analysis/*` | 50 requests | 1 hour |
+| General API | 100 requests | 1 minute |
+
+Rate limit headers included in responses:
+- `X-RateLimit-Limit`: Total requests allowed
+- `X-RateLimit-Remaining`: Requests remaining
+- `Retry-After`: Seconds until reset (when exceeded)
+
+---
+
+## 🚀 React Native Usage Examples
+
+### Authentication Flow
+```typescript
+// Login
+const loginResponse = await fetch('http://localhost:8080/api/auth/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    email: 'john@company.com',
+    password: 'SecurePass123!'
+  })
+});
+const { token, user } = await loginResponse.json();
+
+// Store token for subsequent requests
+await SecureStore.setItemAsync('jwt_token', token);
+```
+
+### File Upload Flow
+```typescript
+// 1. Get upload URL
+const uploadResponse = await fetch(
+  `http://localhost:8080/api/s3/presigned-url/upload?fileName=photo.jpg&fileType=image/jpeg`,
+  {
+    headers: { 'Authorization': `Bearer ${token}` }
+  }
+);
+const { uploadUrl, fileUrl } = await uploadResponse.json();
+
+// 2. Upload to S3
+const imageResponse = await fetch(uploadUrl, {
+  method: 'PUT',
+  body: imageFile,
+  headers: { 'Content-Type': 'image/jpeg' }
+});
+
+// 3. Use fileUrl in incident creation
+const incident = await fetch('http://localhost:8080/api/incidents', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    title: 'Safety Issue',
+    description: 'Issue description',
+    severity: 'HIGH',
+    imageUrls: [fileUrl]
+  })
+});
+```
+
+### Incident Creation with Location
+```typescript
+import * as Location from 'expo-location';
+
+// Get location
+const location = await Location.getCurrentPositionAsync({});
+
+// Create incident
+const incident = await fetch('http://localhost:8080/api/incidents', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    title: 'PPE Violation',
+    description: 'Worker without hard hat',
+    severity: 'HIGH',
+    latitude: location.coords.latitude,
+    longitude: location.coords.longitude,
+    locationDescription: 'Construction Site A',
+    imageUrls: [uploadedImageUrl]
+  })
+});
+```
+
+---
+
+## 🏗️ Frontend Development Notes
+
+### State Management Suggestions
+```typescript
+// User state
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  role: 'WORKER' | 'MANAGER';
+}
+
+// Incident state
+interface Incident {
+  id: string;
+  title: string;
+  description: string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  status: 'OPEN' | 'IN_PROGRESS' | 'UNDER_REVIEW' | 'RESOLVED' | 'CLOSED' | 'CANCELLED';
+  // ... other fields
+}
+```
+
+### Error Handling
+```typescript
+const handleApiError = (error: any) => {
+  if (error.status === 401) {
+    // Redirect to login
+    router.push('/login');
+  } else if (error.status === 429) {
+    // Show rate limit message
+    showAlert(`Rate limit exceeded. Try again in ${error.retryAfterSeconds} seconds`);
+  } else if (error.validationErrors) {
+    // Show validation errors
+    Object.entries(error.validationErrors).forEach(([field, message]) => {
+      showFieldError(field, message);
+    });
+  }
+};
+```
+
+This schema covers all your API endpoints with request/response examples. Save this for quick reference during frontend development! 🚀
