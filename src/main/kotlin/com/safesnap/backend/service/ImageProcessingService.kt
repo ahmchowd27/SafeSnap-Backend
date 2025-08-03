@@ -7,7 +7,6 @@ import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 import java.util.*
-import java.util.concurrent.CompletableFuture
 
 @Service
 class ImageProcessingService(
@@ -18,29 +17,26 @@ class ImageProcessingService(
     private val logger = LoggerFactory.getLogger(ImageProcessingService::class.java)
 
     @Async
-    fun processIncidentImages(incidentId: UUID, imageUrls: List<String>?): CompletableFuture<List<ImageAnalysis>> {
-        return CompletableFuture.supplyAsync {
-            val urls = imageUrls ?: emptyList()
-            if (urls.isEmpty()) {
-                logger.info("No images to process for incident $incidentId")
-                return@supplyAsync emptyList()
-            }
-
-            val analyses = mutableListOf<ImageAnalysis>()
-            urls.forEach { imageUrl ->
-                try {
-                    val analysis = processSingleImage(incidentId, imageUrl)
-                    analyses.add(analysis)
-                } catch (e: Exception) {
-                    logger.error("Error processing image $imageUrl", e)
-                    val failed = createFailedAnalysis(incidentId, imageUrl, "Processing error: ${e.message}")
-                    analyses.add(imageAnalysisRepository.save(failed))
-                }
-            }
-
-            logger.info("Completed processing ${analyses.size} images for incident $incidentId")
-            analyses
+    fun processIncidentImages(incidentId: UUID, imageUrls: List<String>?) {
+        val urls = imageUrls ?: emptyList()
+        if (urls.isEmpty()) {
+            logger.info("No images to process for incident $incidentId")
+            return
         }
+
+        val analyses = mutableListOf<ImageAnalysis>()
+        urls.forEach { imageUrl ->
+            try {
+                val analysis = processSingleImage(incidentId, imageUrl)
+                analyses.add(analysis)
+            } catch (e: Exception) {
+                logger.error("Error processing image $imageUrl", e)
+                val failed = createFailedAnalysis(incidentId, imageUrl, "Processing error: ${e.message}")
+                analyses.add(imageAnalysisRepository.save(failed))
+            }
+        }
+
+        logger.info("Completed processing ${analyses.size} images for incident $incidentId")
     }
 
     fun processSingleImage(incidentId: UUID, imageUrl: String): ImageAnalysis {
@@ -51,7 +47,9 @@ class ImageProcessingService(
 
             val imageBytes = downloadImageFromS3(imageUrl)
             if (imageBytes.isEmpty()) {
-                return imageAnalysisRepository.save(createFailedAnalysis(incidentId, imageUrl, "Failed to download"))
+                return imageAnalysisRepository.save(
+                    createFailedAnalysis(incidentId, imageUrl, "Failed to download")
+                )
             }
 
             val result = googleVisionService.analyzeImage(imageBytes)
@@ -62,10 +60,11 @@ class ImageProcessingService(
             }
 
             return imageAnalysisRepository.save(analysis)
-
         } catch (e: Exception) {
             logger.error("Failed to process image $imageUrl", e)
-            return imageAnalysisRepository.save(createFailedAnalysis(incidentId, imageUrl, "Processing error: ${e.message}"))
+            return imageAnalysisRepository.save(
+                createFailedAnalysis(incidentId, imageUrl, "Processing error: ${e.message}")
+            )
         }
     }
 
@@ -91,14 +90,18 @@ class ImageProcessingService(
                 logger.info("Downloaded ${imageBytes.size} bytes from S3 for $s3Url")
             }
 
-            imageBytes
+            return imageBytes
         } catch (e: Exception) {
-            logger.error("❌ Failed to download image from S3: $s3Url", e)
+            logger.error("Failed to download image from S3: $s3Url", e)
             byteArrayOf()
         }
     }
 
-    private fun createSuccessfulAnalysis(incidentId: UUID, imageUrl: String, result: ImageAnalysisResult): ImageAnalysis {
+    private fun createSuccessfulAnalysis(
+        incidentId: UUID,
+        imageUrl: String,
+        result: ImageAnalysisResult
+    ): ImageAnalysis {
         val safetyTags = result.safetyTags.joinToString(", ")
         val allLabels = result.allLabels.joinToString(", ") {
             "${it.description} (${String.format("%.2f", it.confidence)})"

@@ -28,7 +28,7 @@ class IncidentController(
         val incident = incidentService.createIncident(request, authentication.name)
         
         // Trigger image analysis if images are provided
-        if (request.imageUrls?.isNotEmpty() ?: throw IllegalArgumentException("Image URLs cannot be null")) {
+        if (!request.imageUrls.isNullOrEmpty()) {
             try {
                 imageProcessingService.processIncidentImages(incident.id, request.imageUrls)
             } catch (e: Exception) {

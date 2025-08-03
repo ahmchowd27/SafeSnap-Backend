@@ -78,7 +78,7 @@ class ImageAnalysisController(
             results = processed.map { analysis ->
                 ImageAnalysisResultResponse(
                     imageUrl = analysis.imageUrl,
-                    detectedItems = analysis.tags?.split(",") ?: emptyList(),
+                    detectedItems = analysis.tags.split(","),
                     textDetected = analysis.textDetected,
                     confidenceScore = analysis.confidenceScore,
                     processed = analysis.processed,
@@ -114,7 +114,7 @@ class ImageAnalysisController(
                 analysis.errorMessage != null -> "FAILED"
                 else -> "PROCESSING"
             },
-            detectedItems = analysis.tags?.split(",") ?: emptyList(),
+            detectedItems = analysis.tags.split(","),
             textDetected = analysis.textDetected,
             confidenceScore = analysis.confidenceScore,
             processedAt = analysis.processedAt,

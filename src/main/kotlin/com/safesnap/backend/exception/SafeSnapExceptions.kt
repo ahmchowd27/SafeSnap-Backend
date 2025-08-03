@@ -46,3 +46,14 @@ class RcaReportNotFoundException(id: UUID) : SafeSnapException("RCA Report not f
 class RcaReportAlreadyExistsException(incidentId: UUID) : SafeSnapException("RCA Report already exists for incident: $incidentId")
 
 class InvalidRcaDataException(message: String) : SafeSnapException(message)
+
+// OpenAI and Rate Limiting Exceptions
+class RateLimitExceededException(message: String) : SafeSnapException(message)
+
+class OpenAiServiceException(message: String, cause: Throwable? = null) : SafeSnapException(message, cause)
+
+class RcaGenerationException(message: String, cause: Throwable? = null) : SafeSnapException(message, cause)
+
+class IncidentCategorizationException(message: String) : SafeSnapException(message)
+
+class TemplateNotFoundException(category: String) : SafeSnapException("Template not found for category: $category")

@@ -84,7 +84,10 @@ data class Incident(
     val aiSuggestions: MutableList<AiSuggestion> = mutableListOf(),
 
     @OneToOne(mappedBy = "incident", cascade = [CascadeType.ALL], fetch = FetchType.LAZY)
-    var rcaReport: RcaReport? = null
+    var rcaReport: RcaReport? = null,
+
+    @OneToOne(mappedBy = "incident", cascade = [CascadeType.ALL], fetch = FetchType.LAZY)
+    var rcaAiSuggestion: RcaAiSuggestion? = null
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

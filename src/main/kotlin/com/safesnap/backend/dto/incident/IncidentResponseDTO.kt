@@ -1,5 +1,6 @@
 package com.safesnap.backend.dto.incident
 
+import com.safesnap.backend.dto.rca.RcaAiSuggestionDTO
 import java.time.LocalDateTime
 import java.util.*
 
@@ -22,6 +23,7 @@ data class IncidentResponseDTO(
     val updatedAt: LocalDateTime?,
     val updatedBy: String?,
     val rcaReport: RcaResponseDTO? = null,
+    val rcaAiSuggestions: RcaAiSuggestionDTO? = null, // ✅ ADD THIS
     val aiSuggestions: List<AiSuggestionDTO> = emptyList(),
     val imageTags: List<String> = emptyList(),
     val transcriptions: List<String> = emptyList()
