@@ -59,6 +59,9 @@ dependencies {
 	}
 	implementation("com.google.guava:guava:32.1.3-jre")
 
+	// OpenAI GPT API client
+	implementation("com.theokanning.openai-gpt3-java:service:0.18.2")
+
 	// Database
 	runtimeOnly("org.postgresql:postgresql")
 	testImplementation("com.h2database:h2")

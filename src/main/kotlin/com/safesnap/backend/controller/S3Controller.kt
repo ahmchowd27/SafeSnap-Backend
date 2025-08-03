@@ -25,13 +25,13 @@ class S3Controller(
         @RequestBody request: PresignedUploadRequest,
         @AuthenticationPrincipal userDetails: UserDetails
     ): ResponseEntity<PresignedUrlResponse> {
-        
+
         val response = s3Service.generatePresignedUploadUrl(
             fileType = request.fileType,
             fileExtension = request.fileExtension,
             userDetails = userDetails
         )
-        
+
         return ResponseEntity.ok(response)
     }
 
@@ -39,9 +39,9 @@ class S3Controller(
     fun getPresignedDownloadUrl(
         @RequestBody request: PresignedDownloadRequest
     ): ResponseEntity<Map<String, String>> {
-        
+
         val downloadUrl = s3Service.generatePresignedDownloadUrl(request.s3Url)
-        
+
         return ResponseEntity.ok(mapOf("downloadUrl" to downloadUrl))
     }
 
@@ -65,7 +65,7 @@ class S3Controller(
         ]
     )
     fun checkFileExists(
-        @RequestParam 
+        @RequestParam
         @io.swagger.v3.oas.annotations.Parameter(
             description = "S3 URL of the file to check",
             example = "https://bucket.s3.amazonaws.com/incidents/images/user_123_1234567890_abc123.jpg"
@@ -80,14 +80,14 @@ class S3Controller(
 @Schema(description = "Request for generating pre-signed upload URL")
 data class PresignedUploadRequest(
     @Schema(
-        description = "Type of file to upload", 
+        description = "Type of file to upload",
         example = "IMAGE",
         allowableValues = ["IMAGE", "AUDIO"]
     )
     val fileType: FileType,
-    
+
     @Schema(
-        description = "File extension", 
+        description = "File extension",
         example = "jpg",
         allowableValues = ["jpg", "jpeg", "png", "gif", "webp", "mp3", "wav", "m4a", "ogg"]
     )

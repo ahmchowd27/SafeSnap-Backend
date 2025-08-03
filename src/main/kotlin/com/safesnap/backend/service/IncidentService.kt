@@ -4,6 +4,7 @@ import com.safesnap.backend.dto.incident.IncidentCreateDTO
 import com.safesnap.backend.dto.incident.IncidentResponseDTO
 import com.safesnap.backend.dto.incident.RcaResponseDTO
 import com.safesnap.backend.dto.incident.AiSuggestionDTO
+import com.safesnap.backend.dto.rca.RcaAiSuggestionDTO
 import com.safesnap.backend.dto.user.UserResponseDTO
 import com.safesnap.backend.entity.*
 import com.safesnap.backend.exception.IncidentNotFoundException
@@ -13,14 +14,18 @@ import com.safesnap.backend.repository.IncidentRepository
 import com.safesnap.backend.repository.UserRepository
 import com.safesnap.backend.repository.ImageAnalysisRepository
 import com.safesnap.backend.repository.AiSuggestionRepository
+import com.safesnap.backend.repository.RcaAiSuggestionRepository
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronizationManager
+import org.springframework.transaction.support.TransactionSynchronization
 import java.time.LocalDateTime
 import java.util.*
+
 
 @Service
 @Transactional
@@ -29,10 +34,11 @@ class IncidentService(
     private val userRepository: UserRepository,
     private val imageAnalysisRepository: ImageAnalysisRepository,
     private val aiSuggestionRepository: AiSuggestionRepository,
+    private val rcaAiSuggestionRepository: RcaAiSuggestionRepository,
     private val imageProcessingService: ImageProcessingService,
+    private val rcaAiService: RcaAiService,
     private val metricsService: MetricsService
 ) {
-
     fun createIncident(request: IncidentCreateDTO, userEmail: String): IncidentResponseDTO {
         val user = userRepository.findByEmail(userEmail)
             ?: throw UserNotFoundException(userEmail)
@@ -55,20 +61,35 @@ class IncidentService(
         println("🔧 DEBUG: Incident saved with ID: ${savedIncident.id}")
         println("🔧 DEBUG: Image URLs: ${savedIncident.imageUrls}")
 
-        // Record incident creation metric
+        // Record metric
         metricsService.recordIncidentCreated()
 
-        // Trigger async image analysis if images are provided
-        if (savedIncident.imageUrls.isNotEmpty()) {
-            savedIncident.id?.let { id ->
-                println("🔧 DEBUG: Starting async image processing for incident $id with ${savedIncident.imageUrls.size} images")
-                println("🔧 DEBUG: Image URLs: ${savedIncident.imageUrls}")
-                imageProcessingService.processIncidentImages(id, savedIncident.imageUrls)
-                println("🔧 DEBUG: Async image processing call completed")
-            }
-            // TODO: After image analysis, trigger AI suggestion generation
+        // ✅ Delay async image analysis until AFTER transaction commits
+        if (savedIncident.imageUrls.isNotEmpty() && savedIncident.id != null) {
+            TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
+                override fun afterCommit() {
+                    println("🔧 DEBUG: Starting async image processing for incident ${savedIncident.id} with ${savedIncident.imageUrls.size} images")
+                    imageProcessingService.processIncidentImages(savedIncident.id!!, savedIncident.imageUrls)
+                    println("🔧 DEBUG: Async image processing call completed")
+                }
+            })
         } else {
             println("🔧 DEBUG: No images to process")
+        }
+
+        // ✅ Delay RCA generation until AFTER commit too
+        if (savedIncident.id != null) {
+            TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
+                override fun afterCommit() {
+                    try {
+                        println("🔧 DEBUG: Triggering RCA generation for incident ${savedIncident.id}")
+                        rcaAiService.generateRcaSuggestionsAsync(savedIncident.id!!)
+                        println("🔧 DEBUG: RCA generation triggered successfully")
+                    } catch (e: Exception) {
+                        println("⚠️ WARNING: Failed to trigger RCA generation for incident ${savedIncident.id}: ${e.message}")
+                    }
+                }
+            })
         }
 
         return savedIncident.toResponseDTO()
@@ -91,7 +112,7 @@ class IncidentService(
             val statusEnum = status?.let { IncidentStatus.valueOf(it.uppercase()) }
             val severityEnum = severity?.let { IncidentSeverity.valueOf(it.uppercase()) }
             
-            incidentRepository.findIncidentsForUser(
+            incidentRepository.findIncidentsForUserWithRca(
                 userId = user.id,
                 status = statusEnum,
                 severity = severityEnum,
@@ -111,7 +132,7 @@ class IncidentService(
         val statusEnum = status?.let { IncidentStatus.valueOf(it.uppercase()) }
         val severityEnum = severity?.let { IncidentSeverity.valueOf(it.uppercase()) }
         
-        return incidentRepository.findAllIncidentsWithFilters(
+        return incidentRepository.findAllIncidentsWithFiltersAndRca(
             status = statusEnum,
             severity = severityEnum,
             search = search,
@@ -121,7 +142,7 @@ class IncidentService(
     }
 
     fun getIncidentById(id: UUID, userEmail: String): IncidentResponseDTO {
-        val incident = incidentRepository.findById(id).orElse(null)
+        val incident = incidentRepository.findByIdWithRca(id).orElse(null)
             ?: throw IncidentNotFoundException(id)
         
         val user = userRepository.findByEmail(userEmail)
@@ -136,7 +157,7 @@ class IncidentService(
     }
 
     fun updateIncident(id: UUID, request: IncidentCreateDTO, userEmail: String): IncidentResponseDTO {
-        val incident = incidentRepository.findById(id).orElse(null)
+        val incident = incidentRepository.findByIdWithRca(id).orElse(null)
             ?: throw IncidentNotFoundException(id)
         
         val user = userRepository.findByEmail(userEmail)
@@ -161,9 +182,8 @@ class IncidentService(
             incident.imageUrls = request.imageUrls
             // Trigger image analysis for new images
             incident.id?.let { id ->
-                imageProcessingService.processIncidentImages(id, incident.imageUrls)
+                imageProcessingService.processIncidentImages(id, request.imageUrls)
             }
-            // TODO: After image analysis, trigger AI suggestion generation
         }
         
         if (!request.audioUrls.isNullOrEmpty()) {
@@ -190,7 +210,7 @@ class IncidentService(
     }
 
     fun updateIncidentStatus(id: UUID, status: String, userEmail: String): IncidentResponseDTO {
-        val incident = incidentRepository.findById(id).orElse(null)
+        val incident = incidentRepository.findByIdWithRca(id).orElse(null)
             ?: throw IncidentNotFoundException(id)
         
         val user = userRepository.findByEmail(userEmail)
@@ -210,7 +230,7 @@ class IncidentService(
     }
 
     fun assignIncident(id: UUID, assigneeEmail: String, userEmail: String): IncidentResponseDTO {
-        val incident = incidentRepository.findById(id).orElse(null)
+        val incident = incidentRepository.findByIdWithRca(id).orElse(null)
             ?: throw IncidentNotFoundException(id)
         
         val manager = userRepository.findByEmail(userEmail)
@@ -270,6 +290,20 @@ private fun Incident.toResponseDTO(): IncidentResponseDTO {
                 )
             )
         },
+        
+        // ✅ ONLY show AI suggestions if manager has approved them + clean payload
+        rcaAiSuggestions = this.rcaAiSuggestion?.let { aiRca ->
+            // Only show if status is APPROVED 
+            if (aiRca.status == RcaAiStatus.APPROVED) {
+                RcaAiSuggestionDTO(
+                    suggestedFiveWhys = aiRca.suggestedFiveWhys,
+                    suggestedCorrectiveAction = aiRca.suggestedCorrectiveAction,
+                    suggestedPreventiveAction = aiRca.suggestedPreventiveAction,
+                    reviewedByManager = aiRca.reviewedBy?.fullName ?: "Unknown Manager"
+                )
+            } else null
+        },
+        
         aiSuggestions = this.aiSuggestions.map { suggestion ->
             AiSuggestionDTO(
                 summary = suggestion.summary,

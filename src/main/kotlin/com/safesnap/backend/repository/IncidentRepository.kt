@@ -86,4 +86,52 @@ interface IncidentRepository : JpaRepository<Incident, UUID> {
         WHERE i.assignedTo.id = :userId
     """)
     fun countByAssignedToId(@Param("userId") userId: Long): Long
+
+    @Query("SELECT i FROM Incident i LEFT JOIN FETCH i.rcaReport r LEFT JOIN FETCH r.manager LEFT JOIN FETCH i.rcaAiSuggestion WHERE i.id = :id")
+    fun findByIdWithRca(@Param("id") id: UUID): Optional<Incident>
+
+    @Query("""
+        SELECT i FROM Incident i 
+        LEFT JOIN FETCH i.rcaReport r 
+        LEFT JOIN FETCH r.manager
+        LEFT JOIN FETCH i.rcaAiSuggestion
+        WHERE i.reportedBy.id = :userId 
+        AND (:status IS NULL OR i.status = :status)
+        AND (:severity IS NULL OR i.severity = :severity)
+        AND (:search IS NULL OR 
+             LOWER(i.title) LIKE LOWER(CONCAT('%', :search, '%')) OR 
+             LOWER(i.description) LIKE LOWER(CONCAT('%', :search, '%')) OR
+             LOWER(i.locationDescription) LIKE LOWER(CONCAT('%', :search, '%')))
+        ORDER BY i.reportedAt DESC
+    """)
+    fun findIncidentsForUserWithRca(
+        @Param("userId") userId: Long,
+        @Param("status") status: IncidentStatus?,
+        @Param("severity") severity: IncidentSeverity?,
+        @Param("search") search: String?,
+        pageable: Pageable
+    ): Page<Incident>
+
+    @Query("""
+        SELECT i FROM Incident i 
+        LEFT JOIN FETCH i.rcaReport r 
+        LEFT JOIN FETCH r.manager
+        LEFT JOIN FETCH i.rcaAiSuggestion
+        WHERE (:status IS NULL OR i.status = :status)
+        AND (:severity IS NULL OR i.severity = :severity)
+        AND (:assignedTo IS NULL OR i.assignedTo.email = :assignedTo)
+        AND (:search IS NULL OR 
+             LOWER(i.title) LIKE LOWER(CONCAT('%', :search, '%')) OR 
+             LOWER(i.description) LIKE LOWER(CONCAT('%', :search, '%')) OR
+             LOWER(i.locationDescription) LIKE LOWER(CONCAT('%', :search, '%')) OR
+             LOWER(i.reportedBy.fullName) LIKE LOWER(CONCAT('%', :search, '%')))
+        ORDER BY i.reportedAt DESC
+    """)
+    fun findAllIncidentsWithFiltersAndRca(
+        @Param("status") status: IncidentStatus?,
+        @Param("severity") severity: IncidentSeverity?,
+        @Param("search") search: String?,
+        @Param("assignedTo") assignedTo: String?,
+        pageable: Pageable
+    ): Page<Incident>
 }

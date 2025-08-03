@@ -18,9 +18,7 @@ class GoogleVisionService(
     
     private val logger = LoggerFactory.getLogger(GoogleVisionService::class.java)
     
-    /**
-     * Analyze image and extract labels/tags relevant to safety incidents
-     */
+
     fun analyzeImage(imageBytes: ByteArray): ImageAnalysisResult {
         // Record API call metric
         metricsService.recordVisionApiCall()
@@ -63,8 +61,7 @@ class GoogleVisionService(
                 }
 
                 vision.use { client ->
-                    
-                    // Build the image request
+
                     val imgBytes = ByteString.copyFrom(imageBytes)
                     val img = Image.newBuilder().setContent(imgBytes).build()
                     
