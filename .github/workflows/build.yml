@@ -22,7 +22,19 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      - name: 🔧 Cache Gradle Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
       - name: 🧪 Run Tests
+        env:
+          SPRING_PROFILES_ACTIVE: test
         run: ./gradlew clean test --no-daemon
 
       - name: 🧱 Build Project
