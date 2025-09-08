@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ /*
+  ~  * Copyright (c) 2025 SafeSnap Development Team
+  ~  * Licensed under the MIT License
+  ~  * See LICENSE file in the project root for full license information
+  ~  */
+  -->
+
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <!-- Optional: keep a rolling file; comment out if not needed -->
+    <!--
+    <include resource="org/springframework/boot/logging/logback/file-appender.xml"/>
+    -->
+
+    <!-- Restore typical root level -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <!-- <appender-ref ref="FILE"/> -->
+    </root>
+</configuration>

@@ -84,6 +84,11 @@ dependencies {
 	// Mockito Kotlin (for unit tests)
 	testImplementation("org.mockito.kotlin:mockito-kotlin:5.1.0")
 	testImplementation("org.mockito:mockito-core:5.6.0")
+	// JSON logging (structured logs)
+	implementation("net.logstash.logback:logstash-logback-encoder:7.4")
+	// Flyway (core + PostgreSQL plugin) pinned to a version that supports Postgres 15.13
+	implementation("org.flywaydb:flyway-core:10.17.0")
+	implementation("org.flywaydb:flyway-database-postgresql:10.17.0")
 }
 
 
