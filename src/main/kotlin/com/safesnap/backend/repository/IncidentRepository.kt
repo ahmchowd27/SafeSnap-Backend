@@ -21,10 +21,10 @@ interface IncidentRepository : JpaRepository<Incident, UUID> {
         WHERE i.reportedBy.id = :userId 
         AND (:status IS NULL OR i.status = :status)
         AND (:severity IS NULL OR i.severity = :severity)
-        AND (:search IS NULL OR 
-             LOWER(i.title) LIKE LOWER(CONCAT('%', :search, '%')) OR 
-             LOWER(i.description) LIKE LOWER(CONCAT('%', :search, '%')) OR
-             LOWER(i.locationDescription) LIKE LOWER(CONCAT('%', :search, '%')))
+        AND (COALESCE(:search, '') = '' OR 
+             UPPER(i.title) LIKE UPPER(CONCAT('%', :search, '%')) OR 
+             UPPER(i.description) LIKE UPPER(CONCAT('%', :search, '%')) OR
+             UPPER(i.locationDescription) LIKE UPPER(CONCAT('%', :search, '%')))
         ORDER BY i.reportedAt DESC
     """)
     fun findIncidentsForUser(
@@ -40,11 +40,11 @@ interface IncidentRepository : JpaRepository<Incident, UUID> {
         WHERE (:status IS NULL OR i.status = :status)
         AND (:severity IS NULL OR i.severity = :severity)
         AND (:assignedTo IS NULL OR i.assignedTo.email = :assignedTo)
-        AND (:search IS NULL OR 
-             LOWER(i.title) LIKE LOWER(CONCAT('%', :search, '%')) OR 
-             LOWER(i.description) LIKE LOWER(CONCAT('%', :search, '%')) OR
-             LOWER(i.locationDescription) LIKE LOWER(CONCAT('%', :search, '%')) OR
-             LOWER(i.reportedBy.fullName) LIKE LOWER(CONCAT('%', :search, '%')))
+        AND (COALESCE(:search, '') = '' OR 
+             UPPER(i.title) LIKE UPPER(CONCAT('%', :search, '%')) OR 
+             UPPER(i.description) LIKE UPPER(CONCAT('%', :search, '%')) OR
+             UPPER(i.locationDescription) LIKE UPPER(CONCAT('%', :search, '%')) OR
+             UPPER(i.reportedBy.fullName) LIKE UPPER(CONCAT('%', :search, '%')))
         ORDER BY i.reportedAt DESC
     """)
     fun findAllIncidentsWithFilters(
@@ -98,10 +98,10 @@ interface IncidentRepository : JpaRepository<Incident, UUID> {
         WHERE i.reportedBy.id = :userId 
         AND (:status IS NULL OR i.status = :status)
         AND (:severity IS NULL OR i.severity = :severity)
-        AND (:search IS NULL OR 
-             LOWER(i.title) LIKE LOWER(CONCAT('%', :search, '%')) OR 
-             LOWER(i.description) LIKE LOWER(CONCAT('%', :search, '%')) OR
-             LOWER(i.locationDescription) LIKE LOWER(CONCAT('%', :search, '%')))
+        AND (COALESCE(:search, '') = '' OR 
+             UPPER(i.title) LIKE UPPER(CONCAT('%', :search, '%')) OR 
+             UPPER(i.description) LIKE UPPER(CONCAT('%', :search, '%')) OR
+             UPPER(i.locationDescription) LIKE UPPER(CONCAT('%', :search, '%')))
         ORDER BY i.reportedAt DESC
     """)
     fun findIncidentsForUserWithRca(
@@ -114,17 +114,6 @@ interface IncidentRepository : JpaRepository<Incident, UUID> {
 
     @Query("""
         SELECT i FROM Incident i 
-        LEFT JOIN FETCH i.rcaReport r 
-        LEFT JOIN FETCH r.manager
-        LEFT JOIN FETCH i.rcaAiSuggestion
-        WHERE (:status IS NULL OR i.status = :status)
-        AND (:severity IS NULL OR i.severity = :severity)
-        AND (:assignedTo IS NULL OR i.assignedTo.email = :assignedTo)
-        AND (:search IS NULL OR 
-             LOWER(i.title) LIKE LOWER(CONCAT('%', :search, '%')) OR 
-             LOWER(i.description) LIKE LOWER(CONCAT('%', :search, '%')) OR
-             LOWER(i.locationDescription) LIKE LOWER(CONCAT('%', :search, '%')) OR
-             LOWER(i.reportedBy.fullName) LIKE LOWER(CONCAT('%', :search, '%')))
         ORDER BY i.reportedAt DESC
     """)
     fun findAllIncidentsWithFiltersAndRca(

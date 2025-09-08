@@ -34,9 +34,6 @@ import java.util.*
 class IncidentService(
     private val incidentRepository: IncidentRepository,
     private val userRepository: UserRepository,
-    private val imageAnalysisRepository: ImageAnalysisRepository,
-    private val aiSuggestionRepository: AiSuggestionRepository,
-    private val rcaAiSuggestionRepository: RcaAiSuggestionRepository,
     private val imageProcessingService: ImageProcessingService,
     private val rcaAiService: RcaAiService,
     private val metricsService: MetricsService
@@ -132,16 +129,49 @@ class IncidentService(
         search: String? = null,
         assignedTo: String? = null
     ): Page<IncidentResponseDTO> {
-        val statusEnum = status?.let { IncidentStatus.valueOf(it.uppercase()) }
-        val severityEnum = severity?.let { IncidentSeverity.valueOf(it.uppercase()) }
+        logger.info("getAllIncidents called with: status=$status, severity=$severity, search=$search, assignedTo=$assignedTo, page=${pageable.pageNumber}, size=${pageable.pageSize}")
         
-        return incidentRepository.findAllIncidentsWithFiltersAndRca(
-            status = statusEnum,
-            severity = severityEnum,
-            search = search,
-            assignedTo = assignedTo,
-            pageable = pageable
-        ).map { it.toResponseDTO() }
+        try {
+            val rawResult = when {
+                status == null && severity == null && search.isNullOrBlank() && assignedTo == null -> {
+                    logger.info("Using findAll query - no filters provided")
+                    incidentRepository.findAll(pageable)
+                }
+                else -> {
+                    logger.info("Using filtered query")
+                    val statusEnum = status?.let { IncidentStatus.valueOf(it.uppercase()) }
+                    val severityEnum = severity?.let { IncidentSeverity.valueOf(it.uppercase()) }
+                    incidentRepository.findAllIncidentsWithFiltersAndRca(
+                        status = statusEnum,
+                        severity = severityEnum,
+                        search = search,
+                        assignedTo = assignedTo,
+                        pageable = pageable
+                    )
+                }
+            }
+            
+            logger.info("Raw query returned ${rawResult.totalElements} incidents, content size: ${rawResult.content.size}")
+            
+            if (rawResult.content.isNotEmpty()) {
+                logger.info("First incident: id=${rawResult.content[0].id}, title=${rawResult.content[0].title}")
+            }
+            
+            val result = rawResult.map { incident ->
+                try {
+                    incident.toResponseDTO()
+                } catch (e: Exception) {
+                    logger.error("Error converting incident ${incident.id} to DTO", e)
+                    throw e
+                }
+            }
+            
+            logger.info("getAllIncidents returning ${result.totalElements} incidents after DTO conversion")
+            return result
+        } catch (e: Exception) {
+            logger.error("Error in getAllIncidents", e)
+            throw e
+        }
     }
 
     fun getIncidentById(id: UUID, userEmail: String): IncidentResponseDTO {
@@ -294,9 +324,8 @@ private fun Incident.toResponseDTO(): IncidentResponseDTO {
             )
         },
         
-        // ✅ ONLY show AI suggestions if manager has approved them + clean payload
+
         rcaAiSuggestions = this.rcaAiSuggestion?.let { aiRca ->
-            // Only show if status is APPROVED 
             if (aiRca.status == RcaAiStatus.APPROVED) {
                 RcaAiSuggestionDTO(
                     suggestedFiveWhys = aiRca.suggestedFiveWhys,
