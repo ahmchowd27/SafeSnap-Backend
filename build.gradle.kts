@@ -130,8 +130,14 @@ jacoco {
 	toolVersion = "0.8.11"
 }
 
-// License and project information
 tasks.jar {
+	enabled = false
+	archiveClassifier = ""
+}
+
+tasks.bootJar {
+	enabled = true
+	archiveClassifier = ""
 	manifest {
 		attributes(
 			"Implementation-Title" to "SafeSnap Backend API",
