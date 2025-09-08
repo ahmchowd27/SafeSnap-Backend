@@ -138,6 +138,7 @@ tasks.jar {
 tasks.bootJar {
 	enabled = true
 	archiveClassifier = ""
+	archiveFileName = "safesnap-backend.jar"
 	manifest {
 		attributes(
 			"Implementation-Title" to "SafeSnap Backend API",
