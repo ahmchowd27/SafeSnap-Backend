@@ -13,6 +13,7 @@ class GoogleVisionService(
     @Value("\${google.vision.mock-mode:true}") private val mockMode: Boolean,
     @Value("\${google.vision.project-id:}") private val projectId: String,
     @Value("\${google.vision.credentials-path:}") private val credentialsPath: String,
+    @Value("\${google.vision.credentials-json:}") private val credentialsJson: String,
     private val metricsService: MetricsService
 ) {
     
@@ -38,27 +39,9 @@ class GoogleVisionService(
         return metricsService.timeImageProcessing {
             try {
                 logger.info("Analyzing image with Google Vision API (project: $projectId)")
-                logger.info("Using credentials from: $credentialsPath")
                 
-                // Create client with explicit credentials if path is provided
-                val vision = if (credentialsPath.isNotBlank()) {
-                    val credentialsFile = java.io.File(credentialsPath)
-                    if (credentialsFile.exists()) {
-                        val credentials = com.google.auth.oauth2.ServiceAccountCredentials
-                            .fromStream(java.io.FileInputStream(credentialsFile))
-                        ImageAnnotatorClient.create(
-                            ImageAnnotatorSettings.newBuilder()
-                                .setCredentialsProvider { credentials }
-                                .build()
-                        )
-                    } else {
-                        logger.warn("Credentials file not found at: $credentialsPath, using default credentials")
-                        ImageAnnotatorClient.create()
-                    }
-                } else {
-                    logger.info("No credentials path specified, using default credentials")
-                    ImageAnnotatorClient.create()
-                }
+                // Create client with explicit credentials
+                val vision = createVisionClient()
 
                 vision.use { client ->
 
@@ -162,6 +145,55 @@ class GoogleVisionService(
                     confidenceScore = 0.0,
                     errorMessage = "Analysis failed: ${e.message}"
                 )
+            }
+        }
+    }
+    
+    /**
+     * Create Vision API client with proper credential handling
+     */
+    private fun createVisionClient(): ImageAnnotatorClient {
+        return when {
+            // Check for base64-encoded JSON credentials (Heroku deployment)
+            credentialsJson.isNotBlank() -> {
+                try {
+                    logger.info("Using base64-encoded JSON credentials")
+                    val decodedJson = java.util.Base64.getDecoder().decode(credentialsJson)
+                    val credentialsStream = java.io.ByteArrayInputStream(decodedJson)
+                    val credentials = com.google.auth.oauth2.ServiceAccountCredentials.fromStream(credentialsStream)
+                    ImageAnnotatorClient.create(
+                        ImageAnnotatorSettings.newBuilder()
+                            .setCredentialsProvider { credentials }
+                            .build()
+                    )
+                } catch (e: Exception) {
+                    logger.warn("Failed to parse base64 JSON credentials: ${e.message}, using default credentials")
+                    ImageAnnotatorClient.create()
+                }
+            }
+            
+            // Check for credentials file path
+            credentialsPath.isNotBlank() -> {
+                val credentialsFile = java.io.File(credentialsPath)
+                if (credentialsFile.exists()) {
+                    logger.info("Using credentials file: $credentialsPath")
+                    val credentials = com.google.auth.oauth2.ServiceAccountCredentials
+                        .fromStream(java.io.FileInputStream(credentialsFile))
+                    ImageAnnotatorClient.create(
+                        ImageAnnotatorSettings.newBuilder()
+                            .setCredentialsProvider { credentials }
+                            .build()
+                    )
+                } else {
+                    logger.warn("Credentials file not found at: $credentialsPath, using default credentials")
+                    ImageAnnotatorClient.create()
+                }
+            }
+            
+            // Fall back to default credentials (Application Default Credentials)
+            else -> {
+                logger.info("No explicit credentials provided, using Application Default Credentials")
+                ImageAnnotatorClient.create()
             }
         }
     }
@@ -271,6 +303,7 @@ class GoogleVisionService(
             "mock_mode" to mockMode,
             "project_id" to projectId.ifBlank { "not_configured" },
             "credentials_path" to credentialsPath.ifBlank { "not_configured" },
+            "credentials_json_provided" to credentialsJson.isNotBlank(),
             "credentials_file_exists" to if (credentialsPath.isNotBlank()) {
                 java.io.File(credentialsPath).exists()
             } else false,
