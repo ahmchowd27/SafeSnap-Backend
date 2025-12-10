@@ -2,7 +2,7 @@ package com.safesnap.backend.controller
 
 import com.safesnap.backend.service.FileType
 import com.safesnap.backend.service.PresignedUrlResponse
-import com.safesnap.backend.service.S3Service
+import com.safesnap.backend.service.StorageService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.ExampleObject
@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.*
 @RestController
 @RequestMapping("/api/s3")
 class S3Controller(
-    private val s3Service: S3Service
+    private val storageService: StorageService
 ) {
 
     @PostMapping("/upload-url")
@@ -26,7 +26,7 @@ class S3Controller(
         @AuthenticationPrincipal userDetails: UserDetails
     ): ResponseEntity<PresignedUrlResponse> {
 
-        val response = s3Service.generatePresignedUploadUrl(
+        val response = storageService.generatePresignedUploadUrl(
             fileType = request.fileType,
             fileExtension = request.fileExtension,
             userDetails = userDetails
@@ -40,7 +40,7 @@ class S3Controller(
         @RequestBody request: PresignedDownloadRequest
     ): ResponseEntity<Map<String, String>> {
 
-        val downloadUrl = s3Service.generatePresignedDownloadUrl(request.s3Url)
+        val downloadUrl = storageService.generatePresignedDownloadUrl(request.s3Url)
 
         return ResponseEntity.ok(mapOf("downloadUrl" to downloadUrl))
     }
@@ -72,7 +72,7 @@ class S3Controller(
         )
         s3Url: String
     ): ResponseEntity<Map<String, Boolean>> {
-        val exists = s3Service.fileExists(s3Url)
+        val exists = storageService.fileExists(s3Url)
         return ResponseEntity.ok(mapOf("exists" to exists))
     }
 }

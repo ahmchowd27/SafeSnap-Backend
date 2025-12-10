@@ -1,6 +1,6 @@
 package com.safesnap.backend.controller
 
-import com.safesnap.backend.service.S3Service
+import com.safesnap.backend.service.StorageService
 import com.safesnap.backend.service.GoogleVisionService
 import com.safesnap.backend.service.FileType
 import org.springframework.http.ResponseEntity
@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping("/api/test")
 class TestController(
-    private val s3Service: S3Service,
+    private val storageService: StorageService,
     private val googleVisionService: GoogleVisionService
 ) {
 
@@ -32,7 +32,7 @@ class TestController(
                 .build()
             
             // Test S3 connection by trying to generate a pre-signed URL
-            val testUrl = s3Service.generatePresignedUploadUrl(
+            val testUrl = storageService.generatePresignedUploadUrl(
                 fileType = FileType.IMAGE,
                 fileExtension = "jpg",
                 userDetails = mockUserDetails
@@ -93,7 +93,7 @@ class TestController(
         
         // Test S3
         try {
-            s3Service.generatePresignedUploadUrl(FileType.IMAGE, "jpg", mockUserDetails)
+            storageService.generatePresignedUploadUrl(FileType.IMAGE, "jpg", mockUserDetails)
             results["s3"] = "✅ Working"
         } catch (e: Exception) {
             results["s3"] = "❌ Failed: ${e.message}"

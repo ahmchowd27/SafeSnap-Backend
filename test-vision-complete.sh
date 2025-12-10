@@ -5,8 +5,12 @@ echo "=============================================="
 
 # Configuration
 BACKEND_URL="http://localhost:8080"
-TEST_USER_EMAIL="realtest@safesnap.com"
-TEST_USER_PASSWORD="password123"
+TS_SUFFIX=$(date +%s)
+TEST_USER_EMAIL=${TEST_USER_EMAIL:-"worker.$TS_SUFFIX@safesnap.test"}
+TEST_USER_PASSWORD=${TEST_USER_PASSWORD:-"password123"}
+MANAGER_EMAIL=${MANAGER_EMAIL:-"manager.$TS_SUFFIX@safesnap.test"}
+MANAGER_PASSWORD=${MANAGER_PASSWORD:-"password123"}
+MANAGER_TOKEN=""
 
 # Ensure jq is installed
 if ! command -v jq &> /dev/null; then
@@ -14,10 +18,18 @@ if ! command -v jq &> /dev/null; then
     exit 1
 fi
 
+# Helper to build JSON safely
+json_login() {
+  jq -n --arg email "$1" --arg password "$2" '{email: $email, password: $password}'
+}
+json_register() {
+  jq -n --arg name "$1" --arg email "$2" --arg password "$3" --arg role "$4" '{name: $name, email: $email, password: $password, role: $role}'
+}
+
 echo "🔐 Logging in to SafeSnap..."
 LOGIN_RESPONSE=$(curl -s -X POST $BACKEND_URL/api/auth/login \
   -H "Content-Type: application/json" \
-  -d "{\"email\": \"$TEST_USER_EMAIL\", \"password\": \"$TEST_USER_PASSWORD\"}")
+  --data "$(json_login "$TEST_USER_EMAIL" "$TEST_USER_PASSWORD")")
 
 echo "Login response: $LOGIN_RESPONSE"
 
@@ -31,19 +43,14 @@ if [ "$TOKEN" = "null" ] || [ -z "$TOKEN" ]; then
 
     CREATE_RESPONSE=$(curl -s -X POST $BACKEND_URL/api/auth/register \
       -H "Content-Type: application/json" \
-      -d "{
-        \"name\": \"Test Worker\",
-        \"email\": \"$TEST_USER_EMAIL\",
-        \"password\": \"$TEST_USER_PASSWORD\",
-        \"role\": \"WORKER\"
-      }")
+      --data "$(json_register "Test Worker" "$TEST_USER_EMAIL" "$TEST_USER_PASSWORD" "WORKER")")
 
     echo "User creation response: $CREATE_RESPONSE"
 
     echo "🔄 Retrying login..."
     LOGIN_RESPONSE=$(curl -s -X POST $BACKEND_URL/api/auth/login \
       -H "Content-Type: application/json" \
-      -d "{\"email\": \"$TEST_USER_EMAIL\", \"password\": \"$TEST_USER_PASSWORD\"}")
+      --data "$(json_login "$TEST_USER_EMAIL" "$TEST_USER_PASSWORD")")
 
     TOKEN=$(echo $LOGIN_RESPONSE | jq -r '.token')
 
@@ -54,6 +61,30 @@ if [ "$TOKEN" = "null" ] || [ -z "$TOKEN" ]; then
 fi
 
 echo "✅ Login successful"
+
+# Ensure manager exists and login
+echo "👤 Ensuring manager account exists..."
+MANAGER_LOGIN_RESPONSE=$(curl -s -X POST $BACKEND_URL/api/auth/login \
+  -H "Content-Type: application/json" \
+  --data "$(json_login "$MANAGER_EMAIL" "$MANAGER_PASSWORD")")
+MANAGER_TOKEN=$(echo $MANAGER_LOGIN_RESPONSE | jq -r '.token')
+if [ "$MANAGER_TOKEN" = "null" ] || [ -z "$MANAGER_TOKEN" ]; then
+  echo "🧑‍💼 Creating manager user..."
+  CREATE_MANAGER_RESPONSE=$(curl -s -X POST $BACKEND_URL/api/auth/register \
+    -H "Content-Type: application/json" \
+    --data "$(json_register "Test Manager" "$MANAGER_EMAIL" "$MANAGER_PASSWORD" "MANAGER")")
+  echo "Manager creation response: $CREATE_MANAGER_RESPONSE"
+  echo "🔄 Retrying manager login..."
+  MANAGER_LOGIN_RESPONSE=$(curl -s -X POST $BACKEND_URL/api/auth/login \
+    -H "Content-Type: application/json" \
+    --data "$(json_login "$MANAGER_EMAIL" "$MANAGER_PASSWORD")")
+  MANAGER_TOKEN=$(echo $MANAGER_LOGIN_RESPONSE | jq -r '.token')
+  if [ "$MANAGER_TOKEN" = "null" ] || [ -z "$MANAGER_TOKEN" ]; then
+      echo "❌ Manager login failed!"; exit 1
+  fi
+fi
+
+echo "✅ Manager login successful"
 
 if [ ! -d "test-images" ]; then
     echo "📥 Test images not found. Downloading..."
@@ -82,6 +113,14 @@ for item in "${test_images[@]}"; do
     if [ -f "$image" ]; then
         filename=$(basename "$image")
         ext="${filename##*.}"
+        # Determine content type based on extension
+        case "$ext" in
+          jpg|jpeg) CONTENT_TYPE="image/jpeg" ;;
+          png) CONTENT_TYPE="image/png" ;;
+          webp) CONTENT_TYPE="image/webp" ;;
+          gif) CONTENT_TYPE="image/gif" ;;
+          *) CONTENT_TYPE="application/octet-stream" ;;
+        esac
         echo "📤 Uploading $filename ($description)..."
 
         UPLOAD_RESPONSE=$(curl -s -X POST "$BACKEND_URL/api/s3/upload-url" \
@@ -101,16 +140,69 @@ for item in "${test_images[@]}"; do
             continue
         fi
 
+        # First attempt: minimal PUT with --upload-file and exact Content-Type (do not set Content-Length)
         UPLOAD_RESULT=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "$UPLOAD_URL" \
-            -H "Content-Type: image/jpeg" \
-            --data-binary "@$image")
+            -H "Content-Type: $CONTENT_TYPE" \
+            -T "$image")
 
         if [ "$UPLOAD_RESULT" = "200" ]; then
             uploaded_urls+=("$FILE_URL")
             image_descriptions+=("$description")
             echo "✅ Uploaded: $filename"
+            echo "   S3 URL: $FILE_URL"
+            # Verify existence
+            EXISTS_RESP=$(curl -s -G "$BACKEND_URL/api/s3/file-exists" --data-urlencode "s3Url=$FILE_URL")
+            echo "   Exists check: $EXISTS_RESP"
+            # Generate download URL
+            DL_RESP=$(curl -s -X POST "$BACKEND_URL/api/s3/download-url" -H "Content-Type: application/json" -d "{\"s3Url\": \"$FILE_URL\"}")
+            echo "   Download URL: $(echo "$DL_RESP" | jq -r '.downloadUrl // "N/A"')"
         else
-            echo "❌ Upload failed for $filename (HTTP $UPLOAD_RESULT)"
+            echo "⚠️  Upload attempt failed for $filename (HTTP $UPLOAD_RESULT). Retrying with --data-binary and diagnostics..."
+            # Capture and show S3 error body for diagnostics
+            ERROR_BODY=$(curl -s -X PUT "$UPLOAD_URL" \
+                -H "Content-Type: $CONTENT_TYPE" \
+                --data-binary "@$image")
+            ERROR_CODE=$(echo "$ERROR_BODY" | xmllint --xpath 'string(//Code)' - 2>/dev/null || echo "")
+            ERROR_MSG=$(echo "$ERROR_BODY" | xmllint --xpath 'string(//Message)' - 2>/dev/null || echo "")
+            if [ -n "$ERROR_CODE" ]; then
+              echo "   S3 Error Code: $ERROR_CODE"
+              echo "   S3 Error Message: $ERROR_MSG"
+            else
+              echo "   S3 Error Body: ${ERROR_BODY:0:500}"
+            fi
+
+            # Second attempt with --data-binary
+            UPLOAD_RESULT2=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "$UPLOAD_URL" \
+                -H "Content-Type: $CONTENT_TYPE" \
+                --data-binary "@$image")
+            if [ "$UPLOAD_RESULT2" = "200" ]; then
+                uploaded_urls+=("$FILE_URL")
+                image_descriptions+=("$description")
+                echo "✅ Uploaded on retry: $filename"
+                echo "   S3 URL: $FILE_URL"
+                EXISTS_RESP=$(curl -s -G "$BACKEND_URL/api/s3/file-exists" --data-urlencode "s3Url=$FILE_URL")
+                echo "   Exists check: $EXISTS_RESP"
+                DL_RESP=$(curl -s -X POST "$BACKEND_URL/api/s3/download-url" -H "Content-Type: application/json" -d "{\"s3Url\": \"$FILE_URL\"}")
+                echo "   Download URL: $(echo "$DL_RESP" | jq -r '.downloadUrl // "N/A"')"
+            else
+                echo "⚠️  Second attempt failed (HTTP $UPLOAD_RESULT2). Trying final minimal PUT without extra curl config..."
+                UPLOAD_RESULT3=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "$UPLOAD_URL" \
+                  -H "Content-Type: $CONTENT_TYPE" \
+                  -T "$image")
+                if [ "$UPLOAD_RESULT3" = "200" ]; then
+                  uploaded_urls+=("$FILE_URL")
+                  image_descriptions+=("$description")
+                  echo "✅ Uploaded on final minimal PUT: $filename"
+                  echo "   S3 URL: $FILE_URL"
+                  EXISTS_RESP=$(curl -s -G "$BACKEND_URL/api/s3/file-exists" --data-urlencode "s3Url=$FILE_URL")
+                  echo "   Exists check: $EXISTS_RESP"
+                  DL_RESP=$(curl -s -X POST "$BACKEND_URL/api/s3/download-url" -H "Content-Type: application/json" -d "{\"s3Url\": \"$FILE_URL\"}")
+                  echo "   Download URL: $(echo "$DL_RESP" | jq -r '.downloadUrl // "N/A"')"
+                else
+                  echo "❌ Upload failed for $filename (HTTP $UPLOAD_RESULT3)"
+                  echo "   Presigned URL: $UPLOAD_URL"
+                fi
+            fi
         fi
     else
         echo "⚠️  Image not found: $image"
@@ -144,13 +236,47 @@ INCIDENT_RESPONSE=$(curl -s -X POST $BACKEND_URL/api/incidents \
 INCIDENT_ID=$(echo $INCIDENT_RESPONSE | jq -r '.id')
 
 if [ "$INCIDENT_ID" = "null" ]; then
-    echo "❌ Failed to create incident!"
-    echo "Response: $INCIDENT_RESPONSE"
-    exit 1
+  echo "❌ Failed to create incident!"
+  echo "Response: $INCIDENT_RESPONSE"
+  exit 1
 fi
 
 echo "✅ Incident created: $INCIDENT_ID"
 echo "🔗 Incident URL: $BACKEND_URL/incidents/$INCIDENT_ID"
+
+echo "🧠 Triggering RCA suggestion generation (manager)..."
+RCA_SUGGESTIONS_RESPONSE=$(curl -s -X GET "$BACKEND_URL/api/incidents/$INCIDENT_ID/rca/suggestions" \
+  -H "Authorization: Bearer $MANAGER_TOKEN")
+RCA_STATUS=$(echo "$RCA_SUGGESTIONS_RESPONSE" | jq -r '.status // empty')
+if [ -z "$RCA_STATUS" ]; then
+  echo "⚠️  RCA suggestions not yet available. Attempting regenerate..."
+  RCA_REGEN_RESPONSE=$(curl -s -X POST "$BACKEND_URL/api/incidents/$INCIDENT_ID/rca/suggestions/regenerate" \
+    -H "Authorization: Bearer $MANAGER_TOKEN")
+  echo "RCA regenerate response: $RCA_REGEN_RESPONSE"
+  # Retry fetch once
+  sleep 3
+  RCA_SUGGESTIONS_RESPONSE=$(curl -s -X GET "$BACKEND_URL/api/incidents/$INCIDENT_ID/rca/suggestions" \
+    -H "Authorization: Bearer $MANAGER_TOKEN")
+fi
+
+echo ""
+echo "📘 RCA Suggestions (raw):"
+echo "$RCA_SUGGESTIONS_RESPONSE" | jq '.'
+
+# Review and approve suggestions
+if [ "$(echo "$RCA_SUGGESTIONS_RESPONSE" | jq -r '.id // empty')" != "" ]; then
+  echo "📝 Marking RCA suggestions as reviewed..."
+  RCA_REVIEWED=$(curl -s -X POST "$BACKEND_URL/api/incidents/$INCIDENT_ID/rca/suggestions/review" \
+    -H "Authorization: Bearer $MANAGER_TOKEN")
+  echo "$RCA_REVIEWED" | jq '.'
+
+  echo "✅ Approving RCA suggestions..."
+  RCA_APPROVED=$(curl -s -X POST "$BACKEND_URL/api/incidents/$INCIDENT_ID/rca/suggestions/approve" \
+    -H "Authorization: Bearer $MANAGER_TOKEN")
+  echo "$RCA_APPROVED" | jq '.'
+else
+  echo "⚠️  RCA suggestions not found; continuing with image analysis."
+fi
 
 echo ""
 echo "⏳ Waiting for AI analysis of ${#uploaded_urls[@]} images..."
@@ -170,6 +296,10 @@ for i in {1..6}; do
     if [ "$STATUS" = "COMPLETED" ]; then
         break
     fi
+    # Also check RCA status during polling
+    RCA_POLL=$(curl -s -X GET "$BACKEND_URL/api/incidents/$INCIDENT_ID/rca/suggestions" \
+      -H "Authorization: Bearer $MANAGER_TOKEN")
+    echo "   🧠 RCA status: $(echo "$RCA_POLL" | jq -r '.status // "unknown"')"
 done
 
 echo ""
@@ -198,7 +328,6 @@ echo $FINAL_ANALYSIS | jq -r '.results[]?.detectedItems[]?' | sort | uniq -c | s
 
 echo ""
 echo "📝 Individual Image Results:"
-echo "============================"
 for i in $(seq 0 $((${#uploaded_urls[@]}-1))); do
     if [ $i -lt $(echo $FINAL_ANALYSIS | jq '.results | length') ]; then
         echo ""
@@ -209,6 +338,21 @@ for i in $(seq 0 $((${#uploaded_urls[@]}-1))); do
         echo "Text Found: $(echo $FINAL_ANALYSIS | jq -r ".results[$i].textDetected // \"None\"")"
     fi
 done
+
+echo ""
+echo "🧾 RCA Summary:"
+echo "==============="
+RCA_FINAL=$(curl -s -X GET "$BACKEND_URL/api/incidents/$INCIDENT_ID/rca/suggestions" \
+  -H "Authorization: Bearer $MANAGER_TOKEN")
+echo "ID: $(echo "$RCA_FINAL" | jq -r '.id // "N/A"')"
+echo "Status: $(echo "$RCA_FINAL" | jq -r '.status // "N/A"')"
+echo "Category: $(echo "$RCA_FINAL" | jq -r '.incidentCategory // "N/A"')"
+echo "Five Whys:"
+echo "$(echo "$RCA_FINAL" | jq -r '.suggestedFiveWhys // "N/A"')"
+echo "Corrective Action:"
+echo "$(echo "$RCA_FINAL" | jq -r '.suggestedCorrectiveAction // "N/A"')"
+echo "Preventive Action:"
+echo "$(echo "$RCA_FINAL" | jq -r '.suggestedPreventiveAction // "N/A"')"
 
 echo ""
 echo "🎯 Vision API Test Results:"

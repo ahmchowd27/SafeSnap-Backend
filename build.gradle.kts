@@ -19,6 +19,9 @@ java {
 
 repositories {
 	mavenCentral()
+	maven {
+		url = uri("https://packages.cloud.google.com/maven")
+	}
 }
 
 dependencies {
@@ -62,6 +65,9 @@ dependencies {
 	// OpenAI GPT API client
 	implementation("com.theokanning.openai-gpt3-java:service:0.18.2")
 
+	// Cloud SQL Socket Factory for Postgres (used when connecting from Cloud Run)
+	implementation("com.google.cloud.sql:postgres-socket-factory:1.11.2")
+
 	// Database
 	runtimeOnly("org.postgresql:postgresql")
 	testImplementation("com.h2database:h2")
@@ -89,6 +95,8 @@ dependencies {
 	// Flyway (core + PostgreSQL plugin) pinned to a version that supports Postgres 15.13
 	implementation("org.flywaydb:flyway-core:10.17.0")
 	implementation("org.flywaydb:flyway-database-postgresql:10.17.0")
+	// Google Cloud Storage
+	implementation("com.google.cloud:google-cloud-storage:2.40.0")
 }
 
 

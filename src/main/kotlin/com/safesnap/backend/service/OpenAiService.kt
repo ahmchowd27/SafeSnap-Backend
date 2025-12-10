@@ -1,6 +1,5 @@
 package com.safesnap.backend.service
 
-import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.safesnap.backend.exception.RateLimitExceededException
 import com.safesnap.backend.exception.OpenAiServiceException

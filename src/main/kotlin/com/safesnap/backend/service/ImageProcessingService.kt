@@ -11,7 +11,7 @@ import java.util.*
 
 @Service
 class ImageProcessingService(
-    private val s3Service: S3Service,
+    private val storageService: StorageService,
     private val googleVisionService: GoogleVisionService,
     private val imageAnalysisRepository: ImageAnalysisRepository
 ) {
@@ -78,12 +78,12 @@ class ImageProcessingService(
 
             logger.info("Attempting to download from S3: $s3Url")
 
-            if (!s3Service.fileExists(s3Url)) {
+            if (!storageService.fileExists(s3Url)) {
                 logger.warn("Image file does not exist in S3: $s3Url")
                 return byteArrayOf()
             }
 
-            val imageBytes = s3Service.downloadFileAsBytes(s3Url)
+            val imageBytes = storageService.downloadFileAsBytes(s3Url)
 
             if (imageBytes.isEmpty()) {
                 logger.warn("Downloaded 0 bytes from S3 for $s3Url")
