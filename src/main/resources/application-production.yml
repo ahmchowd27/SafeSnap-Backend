@@ -33,9 +33,7 @@ openai:
 
 google:
   cloud:
-    project-id: ${GOOGLE_CLOUD_PROJECT_ID:mock-project}
+    project-id: ${GOOGLE_CLOUD_PROJECT_ID}
   vision:
-    mock-mode: ${GOOGLE_VISION_MOCK_MODE:false}
-    enabled: ${GOOGLE_VISION_ENABLED:true}
     credentials-path: ${GOOGLE_APPLICATION_CREDENTIALS:}
     credentials-json: ${GOOGLE_APPLICATION_CREDENTIALS_JSON:}
