@@ -28,12 +28,9 @@ aws:
   s3:
     bucket-name: ${AWS_S3_BUCKET_NAME}
 
-openai:
-  api-key: ${OPENAI_API_KEY}
-
-google:
-  cloud:
-    project-id: ${GOOGLE_CLOUD_PROJECT_ID}
-  vision:
-    credentials-path: ${GOOGLE_APPLICATION_CREDENTIALS:}
-    credentials-json: ${GOOGLE_APPLICATION_CREDENTIALS_JSON:}
+anthropic:
+  api-key: ${SAFESNAP_API_KEY}
+  model: ${ANTHROPIC_MODEL:claude-sonnet-4-6}
+  max-tokens: ${ANTHROPIC_MAX_TOKENS:4096}
+  rate-limit:
+    requests-per-minute: ${ANTHROPIC_RATE_LIMIT_RPM:50}

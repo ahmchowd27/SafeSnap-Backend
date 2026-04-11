@@ -3,7 +3,6 @@ package com.safesnap.backend.service
 import com.safesnap.backend.entity.*
 import com.safesnap.backend.dto.incident.RcaCreateDTO
 import com.safesnap.backend.exception.IncidentNotFoundException
-import com.safesnap.backend.exception.OpenAiServiceException
 import com.safesnap.backend.exception.RcaGenerationException
 import com.safesnap.backend.exception.UserNotFoundException
 import com.safesnap.backend.repository.*
@@ -19,9 +18,7 @@ import java.util.concurrent.CompletableFuture
 @Service
 @Transactional
 class RcaAiService(
-    private val openAiService: OpenAiService,
-    private val incidentCategorizationService: IncidentCategorizationService,
-    private val rcaTemplateService: RcaTemplateService,
+    private val claudeService: ClaudeService,
     private val rcaAiSuggestionRepository: RcaAiSuggestionRepository,
     private val rcaReportRepository: RcaReportRepository,
     private val incidentRepository: IncidentRepository,
@@ -35,7 +32,6 @@ class RcaAiService(
     fun generateRcaSuggestionsAsync(incidentId: UUID): CompletableFuture<RcaAiSuggestion?> {
         return CompletableFuture.supplyAsync {
             try {
-                logger.info("Starting async RCA generation for incident: $incidentId")
                 generateRcaSuggestions(incidentId)
             } catch (e: Exception) {
                 logger.error("Async RCA generation failed for incident: $incidentId", e)
@@ -63,73 +59,80 @@ class RcaAiService(
 
                 val imageAnalyses = imageAnalysisRepository.findByIncidentIdOrderByProcessedAtDesc(incidentId)
 
-                val category = incidentCategorizationService.categorizeIncident(incident, imageAnalyses)
-                val confidence = incidentCategorizationService.getCategorizationConfidence(incident, category, imageAnalyses)
-
-                logger.info("Incident $incidentId categorized as: $category (confidence: $confidence)")
-
-                // 🛠️ Fix: Fetch user data separately to avoid lazy loading issues
                 val user = userRepository.findById(incident.reportedBy.id).orElseThrow {
                     UserNotFoundException("User not found with ID: ${incident.reportedBy.id}")
                 }
-                val reporterFullName = user.fullName
-                val reporterRole = user.role.name
 
-                val template = rcaTemplateService.getTemplate(
-                    category = category,
-                    incident = incident,
-                    imageAnalyses = imageAnalyses,
-                    reporterName = reporterFullName,
-                    reporterRole = reporterRole
-                )
+                // Build context from image analyses
+                val imageAnalysisSummaries = imageAnalyses
+                    .filter { it.processed }
+                    .map { it.allLabels ?: it.tags }
 
-                val openAiResponse = openAiService.generateRcaAnalysis(
-                    prompt = template,
-                    incidentContext = buildIncidentContext(incident, imageAnalyses),
+                val safetyTags = imageAnalyses
+                    .filter { it.processed }
+                    .flatMap { it.tags.split(",").map { t -> t.trim() }.filter { t -> t.isNotBlank() } }
+
+                // OSHA violations stored in allLabels field from Claude image analysis
+                val oshaViolations = imageAnalyses
+                    .filter { it.processed && it.allLabels?.contains("29 CFR") == true }
+                    .mapNotNull { it.allLabels }
+
+                // Derive category from existing image analysis tags, fallback to GENERAL_SAFETY
+                val category = deriveCategory(incident, safetyTags)
+
+                val result = claudeService.generateRca(
+                    incidentTitle = incident.title,
+                    incidentDescription = incident.description,
+                    severity = incident.severity.name,
+                    locationDescription = incident.locationDescription,
+                    reporterName = user.fullName,
+                    reporterRole = user.role.name,
+                    imageAnalysisSummaries = imageAnalysisSummaries,
+                    safetyTags = safetyTags,
+                    oshaViolationsFromImages = oshaViolations,
+                    incidentCategory = category,
                     userEmail = user.email
                 )
 
-                if (!openAiResponse.success) {
-                    throw OpenAiServiceException("OpenAI generation failed: ${openAiResponse.errorMessage}")
+                if (!result.success) {
+                    throw RcaGenerationException("Claude RCA generation failed: ${result.errorMessage}")
                 }
-
-                val parsedRca = parseRcaResponse(openAiResponse.content)
 
                 val processingTime = System.currentTimeMillis() - startTime
 
+                // Format structured lists into strings for storage (backward compat with existing schema)
                 val rcaSuggestion = RcaAiSuggestion(
                     incident = incident,
-                    suggestedFiveWhys = parsedRca.fiveWhys,
-                    suggestedCorrectiveAction = parsedRca.correctiveAction,
-                    suggestedPreventiveAction = parsedRca.preventiveAction,
-                    confidenceScore = confidence,
-                    incidentCategory = category,
-                    templateUsed = category.name,
-                    openaiModel = openAiResponse.model,
-                    tokensUsed = openAiResponse.tokensUsed,
+                    suggestedFiveWhys = result.fiveWhys.joinToString("\n"),
+                    suggestedCorrectiveAction = result.immediateCorrectiveActions.joinToString("\n"),
+                    suggestedPreventiveAction = result.longTermPreventiveActions.joinToString("\n"),
+                    confidenceScore = result.confidenceScore,
+                    incidentCategory = result.incidentCategory,
+                    templateUsed = result.oshaReferences.joinToString("; ").take(255),
+                    openaiModel = "claude-sonnet-4-6",
+                    tokensUsed = result.tokensUsed,
                     processingTimeMs = processingTime,
                     status = RcaAiStatus.GENERATED
                 )
 
                 existing?.let { rcaAiSuggestionRepository.delete(it) }
-
                 val saved = rcaAiSuggestionRepository.save(rcaSuggestion)
 
-                logger.info("RCA suggestions generated successfully for incident: $incidentId in ${processingTime}ms")
-                metricsService.recordRcaGenerated(category.name)
+                logger.info("RCA suggestions generated for incident: $incidentId in ${processingTime}ms (tokens: ${result.tokensUsed})")
+                metricsService.recordRcaGenerated(result.incidentCategory.name)
 
                 saved
 
-            } catch (e: OpenAiServiceException) {
-                logger.error("OpenAI service error for incident: $incidentId", e)
-                val failedSuggestion = createFailedSuggestion(incidentId, "OpenAI service error: ${e.message}")
-                metricsService.recordRcaFailed("openai_error")
-                failedSuggestion
+            } catch (e: RcaGenerationException) {
+                logger.error("RCA generation error for incident: $incidentId", e)
+                val failed = createFailedSuggestion(incidentId, e.message ?: "Generation failed")
+                metricsService.recordRcaFailed("rca_generation_error")
+                failed
             } catch (e: Exception) {
                 logger.error("Unexpected error generating RCA for incident: $incidentId", e)
-                val failedSuggestion = createFailedSuggestion(incidentId, "Generation failed: ${e.message}")
+                val failed = createFailedSuggestion(incidentId, "Unexpected error: ${e.message}")
                 metricsService.recordRcaFailed("unexpected_error")
-                failedSuggestion
+                failed
             }
         }
     }
@@ -138,221 +141,76 @@ class RcaAiService(
         val incident = incidentRepository.findById(incidentId).orElseThrow {
             IncidentNotFoundException(incidentId)
         }
-
-        val failedSuggestion = RcaAiSuggestion(
+        return rcaAiSuggestionRepository.save(RcaAiSuggestion(
             incident = incident,
-            suggestedFiveWhys = "RCA generation failed",
-            suggestedCorrectiveAction = "Please manually complete RCA analysis",
-            suggestedPreventiveAction = "Please manually complete RCA analysis",
+            suggestedFiveWhys = "RCA generation failed — please complete manually",
+            suggestedCorrectiveAction = "Please complete corrective actions manually",
+            suggestedPreventiveAction = "Please complete preventive actions manually",
             confidenceScore = 0.0,
             incidentCategory = IncidentCategory.GENERAL_SAFETY,
             templateUsed = "ERROR",
             status = RcaAiStatus.FAILED,
             errorMessage = errorMessage
-        )
-
-        return rcaAiSuggestionRepository.save(failedSuggestion)
+        ))
     }
 
-    private fun buildIncidentContext(incident: Incident, imageAnalyses: List<ImageAnalysis>): Map<String, Any> {
-        // 🛠️ Fix: Use user data that was already fetched to avoid lazy loading
-        val user = userRepository.findById(incident.reportedBy.id).orElseThrow {
-            UserNotFoundException("User not found with ID: ${incident.reportedBy.id}")
-        }
-        
-        return mapOf(
-            "incident_id" to incident.id.toString(),
-            "title" to incident.title,
-            "description" to incident.description,
-            "severity" to incident.severity.name,
-            "location" to (incident.locationDescription ?: "Not specified"),
-            "reported_by" to user.fullName,
-            "reported_at" to incident.reportedAt.toString(),
-            "image_analyses" to imageAnalyses.map {
-                mapOf(
-                    "tags" to it.tags,
-                    "confidence" to it.confidenceScore,
-                    "processed" to it.processed
-                )
-            }
-        )
-    }
-
-    private fun parseRcaResponse(content: String): ParsedRcaResponse {
-        return try {
-            val lines = content.lines().map { it.trim() }
-            val fiveWhysStart = lines.indexOfFirst { it.uppercase().contains("FIVE WHYS") }
-            val correctiveStart = lines.indexOfFirst { it.uppercase().contains("CORRECTIVE ACTIONS") }
-            val preventiveStart = lines.indexOfFirst { it.uppercase().contains("PREVENTIVE ACTIONS") }
-
-            if (fiveWhysStart == -1 || correctiveStart == -1 || preventiveStart == -1) {
-                logger.warn("Could not find all RCA sections in OpenAI response, using raw content")
-                return ParsedRcaResponse(
-                    fiveWhys = content,
-                    correctiveAction = "Please review and format the AI-generated response",
-                    preventiveAction = "Please review and format the AI-generated response"
-                )
-            }
-
-            val fiveWhys = lines.subList(fiveWhysStart + 1, correctiveStart)
-                .filter { it.isNotBlank() }.joinToString("\n")
-
-            val correctiveAction = lines.subList(correctiveStart + 1, preventiveStart)
-                .filter { it.isNotBlank() }.joinToString("\n")
-
-            val preventiveAction = lines.subList(preventiveStart + 1, lines.size)
-                .filter { it.isNotBlank() }.joinToString("\n")
-
-            ParsedRcaResponse(fiveWhys, correctiveAction, preventiveAction)
-        } catch (e: Exception) {
-            logger.error("Failed to parse OpenAI RCA response", e)
-            ParsedRcaResponse(
-                fiveWhys = content,
-                correctiveAction = "Please review and format the AI-generated response",
-                preventiveAction = "Please review and format the AI-generated response"
-            )
-        }
-    }
-
-    /**
-     * Mark RCA suggestions as reviewed by a manager
-     */
     fun markAsReviewed(incidentId: UUID, managerEmail: String): RcaAiSuggestion {
         val suggestion = rcaAiSuggestionRepository.findByIncidentId(incidentId)
             ?: throw RcaGenerationException("No RCA suggestions found for incident: $incidentId")
-        
         val manager = userRepository.findByEmail(managerEmail)
             ?: throw RcaGenerationException("Manager not found: $managerEmail")
-        
-        if (manager.role != Role.MANAGER) {
-            throw RcaGenerationException("User is not a manager: $managerEmail")
-        }
-        
+        if (manager.role != Role.MANAGER) throw RcaGenerationException("User is not a manager: $managerEmail")
+
         suggestion.status = RcaAiStatus.REVIEWED
         suggestion.reviewedAt = LocalDateTime.now()
         suggestion.reviewedBy = manager
-        
-        logger.info("RCA suggestions marked as reviewed for incident: $incidentId by manager: $managerEmail")
         return rcaAiSuggestionRepository.save(suggestion)
     }
 
-    /**
-     * Mark RCA suggestions as approved by a manager (makes them visible to workers)
-     */
     fun markAsApproved(incidentId: UUID, managerEmail: String): RcaAiSuggestion {
         val suggestion = rcaAiSuggestionRepository.findByIncidentId(incidentId)
             ?: throw RcaGenerationException("No RCA suggestions found for incident: $incidentId")
-        
         val manager = userRepository.findByEmail(managerEmail)
             ?: throw RcaGenerationException("Manager not found: $managerEmail")
-        
-        if (manager.role != Role.MANAGER) {
-            throw RcaGenerationException("User is not a manager: $managerEmail")
-        }
-        
+        if (manager.role != Role.MANAGER) throw RcaGenerationException("User is not a manager: $managerEmail")
+
         suggestion.status = RcaAiStatus.APPROVED
         suggestion.reviewedAt = LocalDateTime.now()
         suggestion.reviewedBy = manager
-        
-        logger.info("RCA suggestions marked as approved for incident: $incidentId by manager: $managerEmail")
         return rcaAiSuggestionRepository.save(suggestion)
     }
-    
-    /**
-     * Create final RCA report from approved AI suggestions
-     */
-    fun createFinalRcaFromSuggestions(
-        incidentId: UUID,
-        rcaCreateDTO: RcaCreateDTO,
-        managerEmail: String
-    ): RcaReport {
+
+    fun createFinalRcaFromSuggestions(incidentId: UUID, rcaCreateDTO: RcaCreateDTO, managerEmail: String): RcaReport {
         val suggestion = rcaAiSuggestionRepository.findByIncidentId(incidentId)
             ?: throw RcaGenerationException("No RCA suggestions found for incident: $incidentId")
-        
         val manager = userRepository.findByEmail(managerEmail)
             ?: throw RcaGenerationException("Manager not found: $managerEmail")
-        
-        if (manager.role != Role.MANAGER) {
-            throw RcaGenerationException("User is not a manager: $managerEmail")
-        }
-        
-        // Check if final RCA already exists
-        val existingRca = suggestion.incident.rcaReport
-        if (existingRca != null) {
-            throw RcaGenerationException("Final RCA report already exists for incident: $incidentId")
-        }
-        
-        // Create final RCA report
-        val rcaReport = RcaReport(
+        if (manager.role != Role.MANAGER) throw RcaGenerationException("User is not a manager: $managerEmail")
+        if (suggestion.incident.rcaReport != null) throw RcaGenerationException("Final RCA already exists for incident: $incidentId")
+
+        val rcaReport = rcaReportRepository.save(RcaReport(
             incident = suggestion.incident,
             manager = manager,
             fiveWhys = rcaCreateDTO.fiveWhys,
             correctiveAction = rcaCreateDTO.correctiveAction,
             preventiveAction = rcaCreateDTO.preventiveAction
-        )
-        
-        // Save the RCA report to the database
-        val savedRcaReport = rcaReportRepository.save(rcaReport)
-        
-        // Update suggestion status
-        suggestion.status = if (isContentModified(suggestion, rcaCreateDTO)) {
-            RcaAiStatus.MODIFIED
-        } else {
-            RcaAiStatus.APPROVED
-        }
-        
+        ))
+
+        suggestion.status = if (isContentModified(suggestion, rcaCreateDTO)) RcaAiStatus.MODIFIED else RcaAiStatus.APPROVED
         rcaAiSuggestionRepository.save(suggestion)
-        
-        logger.info("Final RCA report created and saved for incident: $incidentId by manager: $managerEmail")
+
         metricsService.recordRcaApproved(suggestion.incidentCategory.name)
-        
-        return savedRcaReport
+        logger.info("Final RCA created for incident: $incidentId by manager: $managerEmail")
+
+        return rcaReport
     }
-    
-    /**
-     * Check if manager modified the AI suggestions
-     */
-    private fun isContentModified(suggestion: RcaAiSuggestion, finalRca: RcaCreateDTO): Boolean {
-        val fiveWhysSimilarity = calculateSimilarity(suggestion.suggestedFiveWhys, finalRca.fiveWhys)
-        val correctiveSimilarity = calculateSimilarity(suggestion.suggestedCorrectiveAction, finalRca.correctiveAction)
-        val preventiveSimilarity = calculateSimilarity(suggestion.suggestedPreventiveAction, finalRca.preventiveAction)
-        
-        val averageSimilarity = (fiveWhysSimilarity + correctiveSimilarity + preventiveSimilarity) / 3
-        
-        return averageSimilarity < SafeSnapConstants.SIMILARITY_THRESHOLD
-    }
-    
-    /**
-     * Simple text similarity calculation (Jaccard similarity)
-     */
-    private fun calculateSimilarity(text1: String, text2: String): Double {
-        val words1 = text1.lowercase().split("\\s+".toRegex()).toSet()
-        val words2 = text2.lowercase().split("\\s+".toRegex()).toSet()
-        
-        val intersection = words1.intersect(words2).size
-        val union = words1.union(words2).size
-        
-        return if (union == 0) 1.0 else intersection.toDouble() / union
-    }
-    
-    /**
-     * Get RCA suggestions for an incident
-     */
-    fun getRcaSuggestions(incidentId: UUID): RcaAiSuggestion? {
-        return rcaAiSuggestionRepository.findByIncidentId(incidentId)
-    }
-    
-    /**
-     * Retry failed RCA generation
-     */
-    fun retryFailedGeneration(incidentId: UUID): RcaAiSuggestion {
-        logger.info("Retrying RCA generation for incident: $incidentId")
-        return generateRcaSuggestions(incidentId, forceRegenerate = true)
-    }
-    
-    /**
-     * Get RCA generation statistics
-     */
+
+    fun getRcaSuggestions(incidentId: UUID): RcaAiSuggestion? =
+        rcaAiSuggestionRepository.findByIncidentId(incidentId)
+
+    fun retryFailedGeneration(incidentId: UUID): RcaAiSuggestion =
+        generateRcaSuggestions(incidentId, forceRegenerate = true)
+
     fun getRcaStatistics(): RcaStatistics {
         val total = rcaAiSuggestionRepository.count()
         val generated = rcaAiSuggestionRepository.countByStatus(RcaAiStatus.GENERATED)
@@ -360,10 +218,9 @@ class RcaAiService(
         val approved = rcaAiSuggestionRepository.countByStatus(RcaAiStatus.APPROVED)
         val modified = rcaAiSuggestionRepository.countByStatus(RcaAiStatus.MODIFIED)
         val failed = rcaAiSuggestionRepository.countByStatus(RcaAiStatus.FAILED)
-        
         val avgProcessingTime = rcaAiSuggestionRepository.getAverageProcessingTime() ?: 0.0
         val avgTokenUsage = rcaAiSuggestionRepository.getAverageTokenUsage(LocalDateTime.now().minusDays(30)) ?: 0.0
-        
+
         return RcaStatistics(
             totalSuggestions = total,
             generatedCount = generated,
@@ -376,42 +233,58 @@ class RcaAiService(
             averageTokenUsage = avgTokenUsage
         )
     }
-    
-    /**
-     * Get incidents that need RCA review by managers
-     */
-    fun getIncidentsNeedingReview(): List<RcaAiSuggestion> {
-        return rcaAiSuggestionRepository.findPendingReview()
-    }
-    
-    /**
-     * Health check for RCA AI service
-     */
+
+    fun getIncidentsNeedingReview(): List<RcaAiSuggestion> =
+        rcaAiSuggestionRepository.findPendingReview()
+
     fun healthCheck(): RcaServiceHealth {
-        val openAiHealthy = openAiService.healthCheck()
         val recentFailures = rcaAiSuggestionRepository.findFailedSince(LocalDateTime.now().minusHours(24))
-        
         return RcaServiceHealth(
-            openAiServiceHealthy = openAiHealthy,
+            claudeServiceHealthy = claudeService.healthCheck(),
             recentFailureCount = recentFailures.size,
             pendingReviewCount = rcaAiSuggestionRepository.findPendingReview().size,
-            healthy = openAiHealthy && recentFailures.size < 10 // Less than 10 failures in 24h
+            healthy = claudeService.healthCheck() && recentFailures.size < 10
         )
     }
+
+    private fun isContentModified(suggestion: RcaAiSuggestion, finalRca: RcaCreateDTO): Boolean {
+        val fiveWhysSim = calculateSimilarity(suggestion.suggestedFiveWhys, finalRca.fiveWhys)
+        val correctiveSim = calculateSimilarity(suggestion.suggestedCorrectiveAction, finalRca.correctiveAction)
+        val preventiveSim = calculateSimilarity(suggestion.suggestedPreventiveAction, finalRca.preventiveAction)
+        return ((fiveWhysSim + correctiveSim + preventiveSim) / 3) < SafeSnapConstants.SIMILARITY_THRESHOLD
+    }
+
+    private fun calculateSimilarity(text1: String, text2: String): Double {
+        val words1 = text1.lowercase().split("\\s+".toRegex()).toSet()
+        val words2 = text2.lowercase().split("\\s+".toRegex()).toSet()
+        val intersection = words1.intersect(words2).size
+        val union = words1.union(words2).size
+        return if (union == 0) 1.0 else intersection.toDouble() / union
+    }
+
+    /**
+     * Derive incident category from image analysis tags when Claude image analysis
+     * ran before RCA generation — avoids a second Claude call for categorization.
+     */
+    private fun deriveCategory(incident: Incident, safetyTags: List<String>): IncidentCategory {
+        val text = ("${incident.title} ${incident.description} ${safetyTags.joinToString(" ")}").lowercase()
+        return when {
+            text.containsAny("ppe", "hard hat", "helmet", "vest", "glove", "harness", "protective") -> IncidentCategory.PPE_VIOLATION
+            text.containsAny("equipment", "machine", "malfunction", "broken", "defective", "failure") -> IncidentCategory.EQUIPMENT_MALFUNCTION
+            text.containsAny("slip", "trip", "fall", "wet floor", "slippery", "stumble") -> IncidentCategory.SLIP_TRIP_FALL
+            text.containsAny("lift", "strain", "back", "ergonomic", "heavy", "manual handling") -> IncidentCategory.LIFTING_INJURY
+            text.containsAny("chemical", "toxic", "spill", "exposure", "fume", "hazmat") -> IncidentCategory.CHEMICAL_EXPOSURE
+            text.containsAny("electric", "shock", "arc flash", "wiring", "voltage") -> IncidentCategory.ELECTRICAL_INCIDENT
+            text.containsAny("vehicle", "forklift", "truck", "collision", "pedestrian") -> IncidentCategory.VEHICLE_INCIDENT
+            text.containsAny("fire", "explosion", "ignition", "flammable", "combustion") -> IncidentCategory.FIRE_EXPLOSION
+            text.containsAny("confined space", "permit required", "atmospheric") -> IncidentCategory.CONFINED_SPACE
+            else -> IncidentCategory.GENERAL_SAFETY
+        }
+    }
+
+    private fun String.containsAny(vararg terms: String): Boolean = terms.any { this.contains(it) }
 }
 
-/**
- * Parsed RCA response from OpenAI
- */
-data class ParsedRcaResponse(
-    val fiveWhys: String,
-    val correctiveAction: String,
-    val preventiveAction: String
-)
-
-/**
- * RCA generation statistics
- */
 data class RcaStatistics(
     val totalSuggestions: Long,
     val generatedCount: Long,
@@ -424,11 +297,8 @@ data class RcaStatistics(
     val averageTokenUsage: Double
 )
 
-/**
- * RCA service health status
- */
 data class RcaServiceHealth(
-    val openAiServiceHealthy: Boolean,
+    val claudeServiceHealthy: Boolean,
     val recentFailureCount: Int,
     val pendingReviewCount: Int,
     val healthy: Boolean
