@@ -25,12 +25,9 @@ class AuthService(
     private val metricsService: MetricsService
 ) {
     fun register(request: UserCreateDTO): AuthResponseDTO {
-        // Check if email already exists
         if (userRepository.existsByEmail(request.email)) {
             throw EmailAlreadyExistsException(request.email)
         }
-
-        // Create and save user
         val user = User(
             fullName = request.name,
             email = request.email,
@@ -40,8 +37,6 @@ class AuthService(
         
         val savedUser = userRepository.save(user)
         val token = jwtService.generateToken(savedUser.email, savedUser.role)
-        
-        // Record successful registration
         metricsService.recordAuthSuccess()
         
         return AuthResponseDTO(token, savedUser.role.name)

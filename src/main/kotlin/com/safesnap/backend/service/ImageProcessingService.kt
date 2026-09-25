@@ -12,7 +12,7 @@ import java.util.*
 @Service
 class ImageProcessingService(
     private val storageService: StorageService,
-    private val googleVisionService: GoogleVisionService,
+    private val claudeService: ClaudeService,
     private val imageAnalysisRepository: ImageAnalysisRepository
 ) {
     private val logger = LoggerFactory.getLogger(ImageProcessingService::class.java)
@@ -25,99 +25,77 @@ class ImageProcessingService(
             return
         }
 
-        val analyses = mutableListOf<ImageAnalysis>()
         urls.forEach { imageUrl ->
             try {
-                val analysis = processSingleImage(incidentId, imageUrl)
-                analyses.add(analysis)
+                processSingleImage(incidentId, imageUrl)
             } catch (e: Exception) {
-                logger.error("Error processing image $imageUrl", e)
-                val failed = createFailedAnalysis(incidentId, imageUrl, "Processing error: ${e.message}")
-                analyses.add(imageAnalysisRepository.save(failed))
+                logger.error("Error processing image $imageUrl for incident $incidentId", e)
+                imageAnalysisRepository.save(createFailedAnalysis(incidentId, imageUrl, "Processing error: ${e.message}"))
             }
         }
 
-        logger.info("Completed processing ${analyses.size} images for incident $incidentId")
+        logger.info("Completed processing ${urls.size} images for incident $incidentId")
     }
 
     fun processSingleImage(incidentId: UUID, imageUrl: String): ImageAnalysis {
-        try {
-            val existing = imageAnalysisRepository.findByIncidentId(incidentId)
-                .find { it.imageUrl == imageUrl }
-            if (existing != null) return existing
+        val existing = imageAnalysisRepository.findByIncidentId(incidentId).find { it.imageUrl == imageUrl }
+        if (existing != null) return existing
 
-            val imageBytes = downloadImageFromS3(imageUrl)
-            if (imageBytes.isEmpty()) {
-                return imageAnalysisRepository.save(
-                    createFailedAnalysis(incidentId, imageUrl, "Failed to download")
-                )
-            }
-
-            val result = googleVisionService.analyzeImage(imageBytes)
-            val analysis = if (result.success) {
-                createSuccessfulAnalysis(incidentId, imageUrl, result)
-            } else {
-                createFailedAnalysis(incidentId, imageUrl, result.errorMessage)
-            }
-
-            return imageAnalysisRepository.save(analysis)
-        } catch (e: Exception) {
-            logger.error("Failed to process image $imageUrl", e)
-            return imageAnalysisRepository.save(
-                createFailedAnalysis(incidentId, imageUrl, "Processing error: ${e.message}")
-            )
+        val imageBytes = downloadImage(imageUrl)
+        if (imageBytes.isEmpty()) {
+            return imageAnalysisRepository.save(createFailedAnalysis(incidentId, imageUrl, "Failed to download image"))
         }
+
+        val mediaType = detectMediaType(imageUrl)
+        val result = claudeService.analyzeImages(
+            imageDataList = listOf(mediaType to imageBytes),
+            incidentTitle = "Incident $incidentId",
+            incidentDescription = "",
+            severity = "UNKNOWN",
+            locationDescription = null
+        )
+
+        val analysis = if (result.success) {
+            ImageAnalysis(
+                incidentId = incidentId,
+                imageUrl = imageUrl,
+                tags = result.safetyTags.joinToString(", ").ifEmpty { "No safety tags detected" },
+                allLabels = result.oshaViolations.joinToString("; ").ifEmpty { result.summary.take(500) },
+                textDetected = result.textDetected,
+                confidenceScore = result.confidenceScore,
+                processed = true,
+                processedAt = LocalDateTime.now()
+            )
+        } else {
+            createFailedAnalysis(incidentId, imageUrl, result.errorMessage)
+        }
+
+        return imageAnalysisRepository.save(analysis)
     }
 
-    private fun downloadImageFromS3(s3Url: String): ByteArray {
+    private fun downloadImage(imageUrl: String): ByteArray {
         return try {
-            if (s3Url.isBlank()) {
-                logger.warn("S3 URL is blank")
+            if (imageUrl.isBlank()) return byteArrayOf()
+            if (!storageService.fileExists(imageUrl)) {
+                logger.warn("Image not found in storage: $imageUrl")
                 return byteArrayOf()
             }
-
-            logger.info("Attempting to download from S3: $s3Url")
-
-            if (!storageService.fileExists(s3Url)) {
-                logger.warn("Image file does not exist in S3: $s3Url")
-                return byteArrayOf()
-            }
-
-            val imageBytes = storageService.downloadFileAsBytes(s3Url)
-
-            if (imageBytes.isEmpty()) {
-                logger.warn("Downloaded 0 bytes from S3 for $s3Url")
-            } else {
-                logger.info("Downloaded ${imageBytes.size} bytes from S3 for $s3Url")
-            }
-
-            return imageBytes
+            val bytes = storageService.downloadFileAsBytes(imageUrl)
+            logger.info("Downloaded ${bytes.size} bytes for $imageUrl")
+            bytes
         } catch (e: Exception) {
-            logger.error("Failed to download image from S3: $s3Url", e)
+            logger.error("Failed to download image: $imageUrl", e)
             byteArrayOf()
         }
     }
 
-    private fun createSuccessfulAnalysis(
-        incidentId: UUID,
-        imageUrl: String,
-        result: ImageAnalysisResult
-    ): ImageAnalysis {
-        val safetyTags = result.safetyTags.joinToString(", ")
-        val allLabels = result.allLabels.joinToString(", ") {
-            "${it.description} (${String.format("%.2f", it.confidence)})"
+    private fun detectMediaType(imageUrl: String): String {
+        return when {
+            imageUrl.endsWith(".png", ignoreCase = true) -> "image/png"
+            imageUrl.endsWith(".gif", ignoreCase = true) -> "image/gif"
+            imageUrl.endsWith(".webp", ignoreCase = true) -> "image/webp"
+            else -> "image/jpeg"
         }
-
-        return ImageAnalysis(
-            incidentId = incidentId,
-            imageUrl = imageUrl,
-            tags = safetyTags.ifEmpty { "No safety-specific tags detected" },
-            allLabels = allLabels,
-            textDetected = result.textDetected.ifBlank { null },
-            confidenceScore = result.confidenceScore,
-            processed = true,
-            processedAt = LocalDateTime.now()
-        )
     }
 
     private fun createFailedAnalysis(incidentId: UUID, imageUrl: String, errorMessage: String?): ImageAnalysis {

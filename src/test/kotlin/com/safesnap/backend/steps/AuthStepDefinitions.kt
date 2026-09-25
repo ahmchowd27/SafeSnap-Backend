@@ -166,7 +166,7 @@ class AuthStepDefinitions {
 
     @When("I access a protected endpoint without a token")
     fun iAccessAProtectedEndpointWithoutAToken() {
-        lastResponse = restTemplate.getForEntity("${getBaseUrl()}/api/test/s3-health", String::class.java)
+        lastResponse = restTemplate.getForEntity("${getBaseUrl()}/api/incidents", String::class.java)
     }
 
     @Given("I am logged in as a user")
@@ -188,7 +188,7 @@ class AuthStepDefinitions {
 
         val request = HttpEntity<String>(headers)
         lastResponse = restTemplate.exchange(
-            "${getBaseUrl()}/api/test/s3-health",
+            "${getBaseUrl()}/api/incidents",
             HttpMethod.GET,
             request,
             String::class.java
@@ -202,7 +202,7 @@ class AuthStepDefinitions {
 
         val request = HttpEntity<String>(headers)
         lastResponse = restTemplate.exchange(
-            "${getBaseUrl()}/api/test/s3-health",
+            "${getBaseUrl()}/api/incidents",
             HttpMethod.GET,
             request,
             String::class.java
